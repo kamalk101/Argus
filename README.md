@@ -58,6 +58,7 @@ src/Argus.Simulator   scenario files, replay driver, expectation assertions
 src/Argus.Cli         `argus` — replay, rules, selftest
 tests/                unit tests + tests/fixtures/scenarios/*.jsonl
 docs/RULES.md         rule catalogue, scoring model, how to add a rule
+docs/HANDOFF.md       Windows VM handoff: state, invariants, pitfalls, next tasks
 ```
 
 ## Quick start
