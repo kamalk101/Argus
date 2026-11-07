@@ -88,26 +88,39 @@ public sealed class ScopeTrackerTests
     }
 
     [Fact]
-    public void Orphan_without_path_inside_window_is_unconfirmed()
+    public void Pathless_process_without_structural_evidence_is_excluded()
     {
+        // Timing alone is not evidence. A pathless process with an unknown parent
+        // must not be attributed to the session just because it started nearby.
         var tracker = new ProcessScopeTracker(4312, @"C:\argus-test\sample.exe");
         tracker.Observe(Event(EventKind.ProcessStart, 4312, 9999, @"C:\argus-test\sample.exe"));
 
         var decision = tracker.Observe(Event(EventKind.ProcessStart, 6100, 0, null, 500));
 
-        Assert.Equal(ProcessScopeState.Unconfirmed, decision.State);
-        Assert.Equal("orphan-window", decision.Reason);
+        Assert.Equal(ProcessScopeState.Excluded, decision.State);
+        Assert.False(decision.InScope);
+        Assert.Equal("parent-not-in-scope", decision.Reason);
     }
 
     [Fact]
-    public void Orphan_without_path_outside_window_is_excluded()
+    public void System_pseudo_processes_are_never_in_scope()
     {
-        var tracker = new ProcessScopeTracker(4312, @"C:\argus-test\sample.exe");
-        tracker.Observe(Event(EventKind.ProcessStart, 4312, 9999, @"C:\argus-test\sample.exe"));
+        // Regression from a live capture: ETW process rundown produced Idle (0)
+        // and System (4), and the old orphan heuristic put Idle in scope, which
+        // then confirmed System and its children.
+        var tracker = new ProcessScopeTracker(2216, @"C:\Windows\System32\notepad.exe");
+        tracker.Observe(Event(EventKind.ProcessStart, 2216, 9999, @"C:\Windows\System32\notepad.exe"));
 
-        var decision = tracker.Observe(Event(EventKind.ProcessStart, 6100, 0, null, 60_000));
+        var idle = tracker.Observe(Event(EventKind.ProcessStart, 0, 0, null, 500));
+        var system = tracker.Observe(Event(EventKind.ProcessStart, 4, 0, null, 500));
+        var registry = tracker.Observe(Event(EventKind.ProcessStart, 100, 4, null, 500));
 
-        Assert.Equal(ProcessScopeState.Excluded, decision.State);
+        Assert.Equal(ProcessScopeState.Excluded, idle.State);
+        Assert.Equal("system-pid", idle.Reason);
+        Assert.Equal(ProcessScopeState.Excluded, system.State);
+        Assert.Equal("system-pid", system.Reason);
+        Assert.Equal(ProcessScopeState.Excluded, registry.State);
+        Assert.False(registry.InScope);
     }
 
     [Fact]

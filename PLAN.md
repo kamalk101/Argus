@@ -603,13 +603,15 @@ plus the 14 asserted replay scenarios. `scripts/smoke.ps1` (and `verify.ps1 -Smo
 the elevated Windows check: self-test JSON, a real notepad session with recording, and replay
 of that recording.
 
-The first real notepad capture from the `tiny` VM replayed on Linux (108 events, benign), which
-confirms the ETW process path, JSONL format and Windows-to-Linux round trip. That replay also
-exposed and fixed a scope false positive: `System32` processes with unknown parents were
-attributed to a notepad target merely because they shared `System32`; the shared-directory
-heuristic now excludes `Windows`, `Program Files` and `ProgramData`. **File/network/DNS volume,
-event loss under load, UAC relaunch and the live API/SSE stream still need their own Windows
-checks.**
+The first real notepad capture from the `tiny` VM replayed on Linux, which confirms the ETW
+process path, JSONL format and Windows-to-Linux round trip. That replay exposed and fixed two
+scope bugs: `System32` processes with unknown parents were attributed to a notepad target
+merely because they shared `System32`, and ETW process rundown records put Idle (0) and
+System (4) in scope, which cascaded to their children. Shared directories are now excluded,
+`DCStart`/`DCEnd` rundown records are dropped, PIDs 0/4 are never in scope, and timing alone
+is no longer treated as evidence. The same recording now replays with only the root process
+in scope and 0 detections. **File/network/DNS volume, event loss under load, UAC relaunch and
+the live API/SSE stream still need their own Windows checks.**
 
 ### Phase 0 — Foundations (2 d)
 Repo `git init`, solution + 6 projects, `Directory.Build.props`, analyzers, editorconfig, `PLAN.md`/`docs/*`, event contract + enums, capability matrix, threat model, .NET SDK bootstrap in `scripts/`, web scaffold (Vite + TS + Tailwind + shell layout), `scripts/verify.sh`.

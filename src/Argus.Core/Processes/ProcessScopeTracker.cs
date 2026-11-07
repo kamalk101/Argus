@@ -16,9 +16,6 @@ public sealed record ScopeDecision(ProcessScopeState State, bool InScope, string
 /// </summary>
 public sealed class ProcessScopeTracker
 {
-    /// <summary>Window used only when a parent is unknown and the image path is missing.</summary>
-    public static readonly TimeSpan OrphanWindow = TimeSpan.FromMilliseconds(1500);
-
     // Directories shared by unrelated software. A notepad.exe under System32 must
     // not make every process in System32 look like a possible child of notepad.
     private static readonly string[] SharedRootDirectories =
@@ -52,8 +49,7 @@ public sealed class ProcessScopeTracker
             _byPid[behaviorEvent.Pid] = new Entry(
                 behaviorEvent.Pid,
                 behaviorEvent.ParentPid,
-                decision.State,
-                behaviorEvent.TimestampUtc);
+                decision.State);
             return decision;
         }
 
@@ -91,6 +87,15 @@ public sealed class ProcessScopeTracker
             return new ScopeDecision(ProcessScopeState.Root, true, "root");
         }
 
+        // PID 0 (Idle) and PID 4 (System) are not real user-mode processes and can
+        // never be descendants of the monitored application. Without this check a
+        // pathless PID 0 start is attributed by the orphan heuristic and its child
+        // PID 4 then makes the whole system tree look confirmed.
+        if (start.Pid is 0 or 4)
+        {
+            return new ScopeDecision(ProcessScopeState.Excluded, false, "system-pid");
+        }
+
         if (start.ParentPid is { } parentPid && parentPid != start.Pid && _byPid.TryGetValue(parentPid, out var parent))
         {
             var parentInScope = parent.State is ProcessScopeState.Root
@@ -114,18 +119,11 @@ public sealed class ProcessScopeTracker
             return new ScopeDecision(ProcessScopeState.Unconfirmed, true, "image-under-root-directory");
         }
 
-        if (string.IsNullOrEmpty(start.ImagePath) && RecentlyStarted(start.TimestampUtc))
-        {
-            return new ScopeDecision(ProcessScopeState.Unconfirmed, true, "orphan-window");
-        }
-
+        // No structural evidence (parent record, app-specific directory or an
+        // image path) means no attribution. Timing alone is not evidence: every
+        // process on a busy machine starts near some other process.
         return new ScopeDecision(ProcessScopeState.Excluded, false, "parent-not-in-scope");
     }
-
-    private bool RecentlyStarted(DateTimeOffset timestamp) =>
-        _byPid.Values.Any(e =>
-            e.State is ProcessScopeState.Root or ProcessScopeState.Confirmed
-            && (e.StartedUtc - timestamp).Duration() <= OrphanWindow);
 
     private static bool IsSharedRootDirectory(string canonicalDirectory)
     {
@@ -138,5 +136,5 @@ public sealed class ProcessScopeTracker
         return SharedRootDirectories.Any(shared => PathKey.IsUnder(canonicalDirectory, shared));
     }
 
-    private sealed record Entry(int Pid, int? ParentPid, ProcessScopeState State, DateTimeOffset StartedUtc);
+    private sealed record Entry(int Pid, int? ParentPid, ProcessScopeState State);
 }

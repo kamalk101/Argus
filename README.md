@@ -32,11 +32,13 @@ compile on Linux with `EnableWindowsTargeting`, and their platform-neutral mappi
 and volume logic is covered by the core tests.
 
 A real elevated notepad capture from the Windows `tiny` VM has also been recorded and replayed
-on Linux through the same pipeline (108 raw events, benign result). That confirms the ETW
-process path, JSONL recording format and the Windows-to-Linux replay round trip. The first
-replay exposed a scope false positive: unrelated `System32` processes were attributed to a
-notepad target because they shared its directory. The shared-directory heuristic is now
-disabled for `Windows`, `Program Files` and `ProgramData`, with a regression test.
+on Linux through the same pipeline. That confirms the ETW process path, JSONL recording format
+and the Windows-to-Linux replay round trip. The first replay exposed two scope bugs: unrelated
+`System32` processes were attributed to notepad because they shared its directory, and ETW
+process rundown records put Idle/System in scope, which then confirmed their children. Shared
+directories are now excluded, ETW `DCStart`/`DCEnd` rundown records are dropped, PIDs 0/4 are
+never in scope, and timing alone is no longer evidence. The same recording now replays with 83
+of 84 events correctly out of scope, only the root process in scope, and 0 detections.
 
 **What is not verified:** the rest of live Windows behaviour. File/network/DNS/registry volume,
 event loss under load, UAC relaunch and the loopback API/SSE stream are implemented but still

@@ -180,7 +180,13 @@ public sealed class EtwCollector : IDisposable
     {
         if (name.Contains("Process", StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            // Event IDs 3/4 are DCStart/DCEnd rundown records for processes that
+            // already existed when the session started. They are not new starts;
+            // treating them as such floods the session with every process on the
+            // machine (including Idle/System) before the target does anything.
+            return (int)data.ID is not (3 or 4)
+                && !name.Contains("DCStart", StringComparison.OrdinalIgnoreCase)
+                && !name.Contains("DCEnd", StringComparison.OrdinalIgnoreCase);
         }
 
         if (name.Contains("FileIO", StringComparison.OrdinalIgnoreCase))
