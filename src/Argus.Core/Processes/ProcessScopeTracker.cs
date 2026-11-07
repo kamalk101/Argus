@@ -19,6 +19,16 @@ public sealed class ProcessScopeTracker
     /// <summary>Window used only when a parent is unknown and the image path is missing.</summary>
     public static readonly TimeSpan OrphanWindow = TimeSpan.FromMilliseconds(1500);
 
+    // Directories shared by unrelated software. A notepad.exe under System32 must
+    // not make every process in System32 look like a possible child of notepad.
+    private static readonly string[] SharedRootDirectories =
+    [
+        @"c:\windows",
+        @"c:\program files",
+        @"c:\program files (x86)",
+        @"c:\programdata",
+    ];
+
     private readonly Dictionary<int, Entry> _byPid = [];
 
     public ProcessScopeTracker(int rootPid, string? rootImagePath = null)
@@ -92,8 +102,13 @@ public sealed class ProcessScopeTracker
                 : new ScopeDecision(ProcessScopeState.Excluded, false, "parent-outside-scope");
         }
 
-        // No parent record. Prefer structural evidence over timing.
-        if (RootDirectory is not null && start.ImagePath is not null
+        // No parent record. Prefer structural evidence over timing, but only when
+        // the root's directory is application-specific. A shared directory such as
+        // System32 or Program Files is evidence of nothing: attributing every process
+        // there would turn unrelated system activity into session detections.
+        if (RootDirectory is not null
+            && !IsSharedRootDirectory(RootDirectory)
+            && start.ImagePath is not null
             && PathKey.IsUnder(PathKey.Canonicalize(start.ImagePath), RootDirectory))
         {
             return new ScopeDecision(ProcessScopeState.Unconfirmed, true, "image-under-root-directory");
@@ -111,6 +126,17 @@ public sealed class ProcessScopeTracker
         _byPid.Values.Any(e =>
             e.State is ProcessScopeState.Root or ProcessScopeState.Confirmed
             && (e.StartedUtc - timestamp).Duration() <= OrphanWindow);
+
+    private static bool IsSharedRootDirectory(string canonicalDirectory)
+    {
+        // A drive root ("c:") contains everything on that drive.
+        if (canonicalDirectory.Length <= 2 && canonicalDirectory.EndsWith(':'))
+        {
+            return true;
+        }
+
+        return SharedRootDirectories.Any(shared => PathKey.IsUnder(canonicalDirectory, shared));
+    }
 
     private sealed record Entry(int Pid, int? ParentPid, ProcessScopeState State, DateTimeOffset StartedUtc);
 }

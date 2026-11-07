@@ -72,6 +72,22 @@ public sealed class ScopeTrackerTests
     }
 
     [Fact]
+    public void Missing_parent_under_shared_system_directory_is_excluded()
+    {
+        // Regression from a live notepad capture: RuntimeBroker.exe starts in
+        // System32 with an unknown parent. Sharing notepad's directory is not
+        // evidence that it belongs to notepad's tree.
+        var tracker = new ProcessScopeTracker(5592, @"C:\Windows\System32\notepad.exe");
+        tracker.Observe(Event(EventKind.ProcessStart, 5592, 9999, @"C:\Windows\System32\notepad.exe"));
+
+        var decision = tracker.Observe(Event(EventKind.ProcessStart, 2996, 832, @"C:\Windows\System32\RuntimeBroker.exe", 714));
+
+        Assert.Equal(ProcessScopeState.Excluded, decision.State);
+        Assert.False(decision.InScope);
+        Assert.Equal("parent-not-in-scope", decision.Reason);
+    }
+
+    [Fact]
     public void Orphan_without_path_inside_window_is_unconfirmed()
     {
         var tracker = new ProcessScopeTracker(4312, @"C:\argus-test\sample.exe");

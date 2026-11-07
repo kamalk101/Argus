@@ -598,11 +598,18 @@ polling repair, drive-letter mapping, read sampling, volume fuse, gap accounting
 `Argus.Agent` (elevated host, bearer token + Host/Origin guards, one active session, live
 pipeline, SQLite + JSONL recording, SSE, reports, `--self-test`, UAC relaunch). Both projects
 compile on Linux with `EnableWindowsTargeting`, and the pure mapping/sampling/volume logic is
-covered by tests. The suite is now **95 tests** (60 core, 24 analysis, 11 storage), all green,
+covered by tests. The suite is now **96 tests** (61 core, 24 analysis, 11 storage), all green,
 plus the 14 asserted replay scenarios. `scripts/smoke.ps1` (and `verify.ps1 -Smoke`) performs
 the elevated Windows check: self-test JSON, a real notepad session with recording, and replay
-of that recording. **Runtime ETW, UAC, live API/SSE and real capture remain unverified until
-that smoke test passes on the `tiny` VM.**
+of that recording.
+
+The first real notepad capture from the `tiny` VM replayed on Linux (108 events, benign), which
+confirms the ETW process path, JSONL format and Windows-to-Linux round trip. That replay also
+exposed and fixed a scope false positive: `System32` processes with unknown parents were
+attributed to a notepad target merely because they shared `System32`; the shared-directory
+heuristic now excludes `Windows`, `Program Files` and `ProgramData`. **File/network/DNS volume,
+event loss under load, UAC relaunch and the live API/SSE stream still need their own Windows
+checks.**
 
 ### Phase 0 — Foundations (2 d)
 Repo `git init`, solution + 6 projects, `Directory.Build.props`, analyzers, editorconfig, `PLAN.md`/`docs/*`, event contract + enums, capability matrix, threat model, .NET SDK bootstrap in `scripts/`, web scaffold (Vite + TS + Tailwind + shell layout), `scripts/verify.sh`.
@@ -613,7 +620,7 @@ Schema v1 + migrations, repositories, FTS, rollups, `BehaviorEvent` normaliser, 
 **DoD:** `replay` produces deterministic, asserted detection output for 12 scenarios; storage tests green incl. WAL concurrency; aggregator groups repeats.
 **Hand-off:** you install .NET 8 SDK on Windows and run `scripts/verify.ps1` (build only) — catches Windows-target compile issues early.
 
-### Phase 2 — Windows monitoring + agent host (6 d) — Linux ✅ · Win ⏳ (smoke pending)
+### Phase 2 — Windows monitoring + agent host (6 d) — Linux ✅ · Win ✅ (process capture + replay) · file/net/UAC/API ⏳
 Kernel-Process collector (cmdline chain), Kernel-File collector (scope filter, drive-letter mapping, read sampling, fuse), Kernel-Network + `GetExtendedTcpTable` attribution repair, DNS collector, registry collector (optional), gap recorder, agent host with Kestrel + SSE + token/Origin guards, elevation bootstrap (`runas` relaunch, single instance mutex), `scripts/verify.ps1` checklist, `scripts/smoke.ps1` live check, first real session recorded to JSONL.
 **DoD (Windows):** monitoring `notepad.exe` and `7z.exe` yields a correct tree, real file events with resolved paths, real connections with owner PID; non-elevated start shows the elevation path, not a crash; recorded JSONL replays identically on Linux. Verified by `scripts/smoke.ps1`: self-test JSON, live notepad capture, non-empty recording, replay exit 0.
 

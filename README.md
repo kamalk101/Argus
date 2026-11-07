@@ -15,7 +15,7 @@ malicious. It does not scan a file and print a verdict.
 |---|---|---|
 | 0 | Solution, event contract, docs, scripts | **done** (Linux-verified) |
 | 1 | Core model, scope tracking, scoring, SQLite, replay harness, fixtures | **done** (Linux-verified) |
-| 2 | ETW collectors + elevated agent host | **implemented**; Linux build/tests pass, live capture pending Windows smoke |
+| 2 | ETW collectors + elevated agent host | **implemented**; live process capture + JSONL replay confirmed on Windows; file/network/DNS volume, UAC and API/SSE checks pending |
 | 3 | Full 22-rule catalogue + correlation | not started |
 | 4 | Dashboard (8 screens) | not started |
 | 5 | Windows end-to-end, reports, tuning | not started |
@@ -24,17 +24,24 @@ malicious. It does not scan a file and print a verdict.
 
 Full plan and phase acceptance criteria: [`PLAN.md`](PLAN.md).
 
-**What is verified today:** 95 unit tests (60 core, 24 analysis, 11 storage), 14 recorded
+**What is verified today:** 96 unit tests (61 core, 24 analysis, 11 storage), 14 recorded
 scenarios replaying through the real pipeline with asserted verdicts, SQLite persistence and
 FTS search round-trip, and a throughput measurement of the analysis stage (~67k events/s on
-synthetic input in the latest run). The Windows projects (`Argus.Monitor`, `Argus.Agent`) compile on Linux with
-`EnableWindowsTargeting`, and their platform-neutral mapping, sampling and volume logic is
-covered by the core tests.
+synthetic input in the latest run). The Windows projects (`Argus.Monitor`, `Argus.Agent`)
+compile on Linux with `EnableWindowsTargeting`, and their platform-neutral mapping, sampling
+and volume logic is covered by the core tests.
 
-**What is not verified:** live Windows behaviour. ETW delivery, UAC relaunch, the loopback
-API/SSE stream, real file/network capture and the JSONL-to-Linux replay round trip are
-implemented but only a run on Windows can prove them. Use `scripts/smoke.ps1` (elevated) for
-that check; until it passes on the target VM, treat those paths as unverified.
+A real elevated notepad capture from the Windows `tiny` VM has also been recorded and replayed
+on Linux through the same pipeline (108 raw events, benign result). That confirms the ETW
+process path, JSONL recording format and the Windows-to-Linux replay round trip. The first
+replay exposed a scope false positive: unrelated `System32` processes were attributed to a
+notepad target because they shared its directory. The shared-directory heuristic is now
+disabled for `Windows`, `Program Files` and `ProgramData`, with a regression test.
+
+**What is not verified:** the rest of live Windows behaviour. File/network/DNS/registry volume,
+event loss under load, UAC relaunch and the loopback API/SSE stream are implemented but still
+need their own checks. Use `scripts/smoke.ps1` (elevated) for the live path; until each leg has
+run on the target VM, treat it as unverified.
 
 ## Layout
 
