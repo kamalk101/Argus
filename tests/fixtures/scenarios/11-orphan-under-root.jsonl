@@ -1,0 +1,4 @@
+{"$meta":{"name":"orphan-under-root","description":"A child process start arrives with no parent record, but its image lives under the monitored application's directory. It is attributed as unconfirmed scope and analysed.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":["P-002"],"band":"Suspicious","minScore":20,"maxDetections":1}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.500Z","kind":"processStart","pid":6000,"parentPid":0,"imageName":"helper.exe","imagePath":"C:\\argus-test\\bin\\helper.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:02.400Z","kind":"processStart","pid":6100,"parentPid":6000,"imageName":"cmd.exe","imagePath":"C:\\Windows\\System32\\cmd.exe","commandLine":"cmd.exe /c whoami","source":"replay"}

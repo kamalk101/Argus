@@ -1,0 +1,4 @@
+{"$meta":{"name":"encoded-powershell","description":"An application spawns PowerShell with a base64 encoded command. P-002 and P-003 both fire; both are process evidence so the score stays suspicious.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":["P-002","P-003"],"band":"Suspicious","minScore":30,"maxDetections":2}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.100Z","kind":"processStart","pid":5120,"parentPid":4312,"imageName":"powershell.exe","imagePath":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","commandLine":"powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAKQA=","source":"replay"}
+{"ts":"2026-05-01T10:00:07.700Z","kind":"processStop","pid":5120,"source":"replay"}

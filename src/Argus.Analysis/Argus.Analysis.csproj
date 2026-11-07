@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Argus.Analysis</RootNamespace>
+    <Description>Rule evaluation, correlation and the session pipeline. No Windows dependencies.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Argus.Core/Argus.Core.csproj" />
+  </ItemGroup>
+</Project>

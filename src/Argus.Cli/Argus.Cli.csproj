@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>argus</AssemblyName>
+    <RootNamespace>Argus.Cli</RootNamespace>
+    <Description>Command line entry point: replay, assert, list rules, selftest.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Argus.Core/Argus.Core.csproj" />
+    <ProjectReference Include="../Argus.Analysis/Argus.Analysis.csproj" />
+    <ProjectReference Include="../Argus.Storage/Argus.Storage.csproj" />
+    <ProjectReference Include="../Argus.Simulator/Argus.Simulator.csproj" />
+  </ItemGroup>
+</Project>

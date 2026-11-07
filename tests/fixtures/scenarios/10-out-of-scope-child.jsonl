@@ -1,0 +1,5 @@
+{"$meta":{"name":"out-of-scope-child","description":"An unrelated process writes to System32. Its parent is not in the monitored tree, so its events must be counted but not analysed.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":[],"absentRules":["F-005"],"band":"Benign","maxDetections":0}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.000Z","kind":"processStart","pid":5000,"parentPid":777,"imageName":"unrelated.exe","imagePath":"C:\\Program Files\\Other\\unrelated.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"fileCreate","pid":5000,"target":"C:\\Windows\\System32\\unrelated.dll","source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\out\\log.txt","source":"replay"}

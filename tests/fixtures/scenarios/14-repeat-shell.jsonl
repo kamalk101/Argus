@@ -1,0 +1,4 @@
+{"$meta":{"name":"repeat-shell","description":"The application spawns two shells inside the merge window. Repeats must collapse into one detection with a count, not two cards.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":["P-002"],"maxDetections":1,"band":"Suspicious","minScore":25}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.000Z","kind":"processStart","pid":5120,"parentPid":4312,"imageName":"cmd.exe","imagePath":"C:\\Windows\\System32\\cmd.exe","commandLine":"cmd.exe /c dir","source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"processStart","pid":5220,"parentPid":4312,"imageName":"cmd.exe","imagePath":"C:\\Windows\\System32\\cmd.exe","commandLine":"cmd.exe /c whoami","source":"replay"}

@@ -1,0 +1,6 @@
+{"$meta":{"name":"benign-notepad","description":"A text editor starts, writes and reads a document. No rule should fire.","rootPid":4312,"rootImagePath":"C:\\argus-test\\notepad-like.exe","expect":{"rules":[],"absentRules":["P-002","P-003","F-001","F-005","F-007","N-001","X-001"],"band":"Benign","maxScore":0,"maxDetections":0}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"notepad-like.exe","imagePath":"C:\\argus-test\\notepad-like.exe","commandLine":"notepad-like.exe C:\\argus-test\\notes.txt","source":"replay"}
+{"ts":"2026-05-01T10:00:00.400Z","kind":"fileRead","pid":4312,"target":"C:\\argus-test\\notes.txt","source":"replay"}
+{"ts":"2026-05-01T10:00:02.100Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\notes.txt","bytesOut":120,"source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"fileCreate","pid":4312,"target":"C:\\argus-test\\notes.txt.bak","bytesOut":120,"source":"replay"}
+{"ts":"2026-05-01T10:00:09.000Z","kind":"processStop","pid":4312,"source":"replay"}

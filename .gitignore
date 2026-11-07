@@ -1,0 +1,27 @@
+# build output
+bin/
+obj/
+artifacts/
+TestResults/
+*.user
+
+# local toolchain (dotnet-install.sh target)
+.dotnet/
+
+# front-end (phase 4)
+node_modules/
+dist/
+.vite/
+
+# runtime data: never commit captured sessions or exports
+*.db
+*.db-wal
+*.db-shm
+*.jsonl.tmp
+sessions/
+exports/
+
+# editor / OS
+.vs/
+.idea/
+.DS_Store

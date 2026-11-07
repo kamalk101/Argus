@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Argus.Storage</RootNamespace>
+    <Description>SQLite persistence for sessions, events, detections, scores and gaps.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Argus.Core/Argus.Core.csproj" />
+    <ProjectReference Include="../Argus.Analysis/Argus.Analysis.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+{"$meta":{"name":"persistence-then-c2","description":"Dropped payload, autostart shortcut, encoded shell and an external connection. Three evidence channels corroborate: malicious.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":["F-001","F-007","P-002","P-003","X-001"],"band":"Malicious","minScore":65}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.000Z","kind":"fileCreate","pid":4312,"target":"C:\\argus-test\\drop\\stage2.exe","bytesOut":53248,"source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"fileCreate","pid":4312,"target":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\updater.lnk","source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"processStart","pid":5120,"parentPid":4312,"imageName":"powershell.exe","imagePath":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","commandLine":"powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAKQA=","source":"replay"}
+{"ts":"2026-05-01T10:00:04.200Z","kind":"netConnect","pid":5120,"remoteIp":"203.0.113.7","remotePort":443,"protocol":"tcp","hostName":"update-check.example","source":"replay"}
+{"ts":"2026-05-01T10:00:11.000Z","kind":"processStop","pid":5120,"source":"replay"}

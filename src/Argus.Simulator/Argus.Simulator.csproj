@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Argus.Simulator</RootNamespace>
+    <Description>Scenario files, replay driver and assertion harness.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Argus.Core/Argus.Core.csproj" />
+    <ProjectReference Include="../Argus.Analysis/Argus.Analysis.csproj" />
+  </ItemGroup>
+</Project>

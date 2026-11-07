@@ -1,0 +1,17 @@
+{"$meta":{"name":"noise-volume","description":"A build tool writes 40 ordinary files in its own directory. Volume alone is not suspicious.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":[],"band":"Benign","maxDetections":0}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.000Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a01.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.050Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a02.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.100Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a03.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.150Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a04.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.200Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a05.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.250Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a06.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.300Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a07.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.350Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a08.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.400Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a09.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.450Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a10.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.500Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a11.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.550Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a12.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.600Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a13.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.650Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a14.o","source":"replay"}
+{"ts":"2026-05-01T10:00:01.700Z","kind":"fileWrite","pid":4312,"target":"C:\\argus-test\\build\\a15.o","source":"replay"}

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Argus.Core</RootNamespace>
+    <Description>Platform-independent domain model, scope tracking, path classification and risk scoring.</Description>
+  </PropertyGroup>
+</Project>

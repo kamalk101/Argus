@@ -1,0 +1,8 @@
+{"$meta":{"name":"loopback-beacon","description":"Ten connections to a local development server. Loopback must never be treated as command-and-control.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":[],"absentRules":["N-001","X-001"],"band":"Benign","maxDetections":0}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.000Z","kind":"netConnect","pid":4312,"remoteIp":"127.0.0.1","remotePort":4444,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"netConnect","pid":4312,"remoteIp":"127.0.0.1","remotePort":4444,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"netConnect","pid":4312,"remoteIp":"127.0.0.1","remotePort":4444,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:04.000Z","kind":"netConnect","pid":4312,"remoteIp":"127.0.0.1","remotePort":4444,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:05.000Z","kind":"netConnect","pid":4312,"remoteIp":"127.0.0.1","remotePort":4444,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:06.000Z","kind":"netConnect","pid":4312,"remoteIp":"127.0.0.1","remotePort":4444,"protocol":"tcp","source":"replay"}

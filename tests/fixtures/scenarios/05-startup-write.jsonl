@@ -1,0 +1,4 @@
+{"$meta":{"name":"startup-write","description":"An application drops a shortcut into the machine startup folder. F-001 fires.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":["F-001"],"absentRules":["F-005","X-001"],"band":"Suspicious","minScore":18,"maxDetections":1}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:03.250Z","kind":"fileCreate","pid":4312,"target":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\updater.lnk","source":"replay"}
+{"ts":"2026-05-01T10:00:04.000Z","kind":"fileWrite","pid":4312,"target":"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\updater.lnk","bytesOut":2048,"source":"replay"}
