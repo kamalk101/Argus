@@ -6,11 +6,15 @@
 
     Add -InstallSdk to install the .NET 8 SDK into %USERPROFILE%\.dotnet first
     (no administrator rights required, no system-wide change).
+
+    Add -Smoke to also run the elevated live-capture check (scripts/smoke.ps1).
+    That switch requires an elevated PowerShell; the default checks do not.
 #>
 [CmdletBinding()]
 param(
     [switch]$InstallSdk,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$Smoke
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,6 +63,13 @@ if (-not $SkipTests) {
 
     & $dotnet run --project src/Argus.Cli -v q --no-build -- selftest
     if ($LASTEXITCODE -ne 0) { throw 'selftest failed' }
+}
+
+if ($Smoke) {
+    Write-Host ''
+    Write-Host '== live smoke (elevated) ==' -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot 'smoke.ps1') -SkipBuild
+    if ($LASTEXITCODE -ne 0) { throw 'smoke test failed' }
 }
 
 Write-Host ''

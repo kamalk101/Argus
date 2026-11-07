@@ -26,7 +26,7 @@ Status: planning · Version 1.0 · Owner: you · Implementer: me (Buffy)
 
 This matters more than any diagram below, so it is not buried in an appendix.
 
-**This dev machine is Linux** (`/home/kamal/Documents/F`), with Node 22 and Python 3.14, and **no .NET SDK installed**. The product targets Windows. That produces a hard split:
+**This dev machine is Linux** (`/home/kamal/Documents/F`), with Node 22 and Python 3.14, and the .NET 8 SDK installed user-locally in `~/.dotnet` (no system-wide change). The product targets Windows. That produces a hard split:
 
 | Layer | Buildable & testable here (Linux) | Needs your Windows machine |
 |---|---|---|
@@ -35,14 +35,15 @@ This matters more than any diagram below, so it is not buried in an appendix.
 | `Argus.Storage` (SQLite schema, repos) | ✅ | — |
 | `Argus.Simulator` (synthetic + replay event source) | ✅ | — |
 | Dashboard (`web/`) | ✅ builds, runs, verified in browser | visual check on Windows |
-| `Argus.Monitor` (ETW collectors) | ✗ compiles only on Windows; runtime unverifiable here | ✅ required |
-| `Argus.Agent` / `Argus.Desktop` (elevation, WebView2, Kestrel) | ✗ | ✅ required |
+| `Argus.Monitor` (ETW collectors) | ✅ compiles with `EnableWindowsTargeting`; platform-neutral mapping is unit-tested | ✅ runtime required |
+| `Argus.Agent` (elevation, Kestrel, live session) | ✅ compiles; live API/SSE/UAC unverifiable here | ✅ runtime required |
+| `Argus.Desktop` (WebView2 shell) | ✗ not scaffolded until Phase 4 | ✅ required |
 | End-to-end behaviour, event loss, perf under load | ✗ | ✅ required |
 
 **Consequences, planned into the phases:**
 
 1. I install the .NET 8 SDK locally via `dotnet-install.sh` into `~/.dotnet` (no sudo, no system change). This lets me compile and unit-test the entire cross-platform core and run the whole dashboard against recorded/replayed event streams.
-2. The Windows-only code is **written here, compiled by you on Windows** with `scripts/verify.ps1`. Every Windows-only file gets a thin interface boundary (`IEventSource`) so the logic behind it is still tested on Linux.
+2. The Windows-only code is **written here and compiled here** with `EnableWindowsTargeting`, then re-verified on Windows with `scripts/verify.ps1` and `scripts/smoke.ps1`. Every Windows-only file gets a thin interface boundary (`IEventSource`) so the logic behind it is still tested on Linux.
 3. The first real Windows run is a **joint debugging session**, not a formality. Expect the ETW layer to need 2–3 tuning passes (provider keywords, filter scope, buffer sizing) that cannot be pre-verified.
 4. I will never report ETW behaviour as "tested" when only the Linux replay path ran. Each phase's acceptance criteria state which side verified what.
 
@@ -545,7 +546,7 @@ Safety rails: refuses to run without `--root`; refuses paths outside `%TEMP%`; r
 | Analysis determinism — same fixture twice ⇒ identical detection ids/scores | `replay --twice` | Linux |
 | UI build + typecheck | `tsc --noEmit`, `vite build`, `eslint` | Linux |
 | UI behaviour — routes render with replay data, SSE reconnect, empty/error states | Playwright (headless) | Linux |
-| Windows integration — ETW providers attach, elevation, real tree, real net | manual + `scripts/verify.ps1` checklist | Windows |
+| Windows integration — ETW providers attach, elevation, real tree, real net | `scripts/smoke.ps1` (self-test + live capture + replay), `scripts/verify.ps1 -Smoke` | Windows |
 | Resilience — kill agent, kill monitored app, deny access to LSASS, ETW session conflict | scripted | Windows |
 | Security — foreign `Origin`/`Host` rejected, missing token 401, path traversal 404 | xUnit + curl script | both |
 
@@ -591,6 +592,18 @@ Windows-only projects (`Monitor`, `Agent`, `Desktop`) are not scaffolded yet, so
 web scaffold moves to Phase 4, when there is real data for it to render. See `README.md` for the
 current verified/unverified split.
 
+**Progress (2026-11-07):** Phase 2 code is implemented: `Argus.Monitor` (Kernel-Process/File/
+Network/Registry/DNS ETW collection, process metadata, `GetExtendedTcpTable` owner table,
+polling repair, drive-letter mapping, read sampling, volume fuse, gap accounting) and
+`Argus.Agent` (elevated host, bearer token + Host/Origin guards, one active session, live
+pipeline, SQLite + JSONL recording, SSE, reports, `--self-test`, UAC relaunch). Both projects
+compile on Linux with `EnableWindowsTargeting`, and the pure mapping/sampling/volume logic is
+covered by tests. The suite is now **95 tests** (60 core, 24 analysis, 11 storage), all green,
+plus the 14 asserted replay scenarios. `scripts/smoke.ps1` (and `verify.ps1 -Smoke`) performs
+the elevated Windows check: self-test JSON, a real notepad session with recording, and replay
+of that recording. **Runtime ETW, UAC, live API/SSE and real capture remain unverified until
+that smoke test passes on the `tiny` VM.**
+
 ### Phase 0 — Foundations (2 d)
 Repo `git init`, solution + 6 projects, `Directory.Build.props`, analyzers, editorconfig, `PLAN.md`/`docs/*`, event contract + enums, capability matrix, threat model, .NET SDK bootstrap in `scripts/`, web scaffold (Vite + TS + Tailwind + shell layout), `scripts/verify.sh`.
 **DoD:** `dotnet build` of cross-platform projects passes on Linux; `npm run build` passes; empty app shell renders.
@@ -600,9 +613,9 @@ Schema v1 + migrations, repositories, FTS, rollups, `BehaviorEvent` normaliser, 
 **DoD:** `replay` produces deterministic, asserted detection output for 12 scenarios; storage tests green incl. WAL concurrency; aggregator groups repeats.
 **Hand-off:** you install .NET 8 SDK on Windows and run `scripts/verify.ps1` (build only) — catches Windows-target compile issues early.
 
-### Phase 2 — Windows monitoring + agent host (6 d) — Win ✅ (smoke)
-Kernel-Process collector (cmdline chain), Kernel-File collector (scope filter, drive-letter mapping, read sampling, fuse), Kernel-Network + `GetExtendedTcpTable` attribution repair, DNS collector, registry collector (optional), gap recorder, agent host with Kestrel + SSE + token/Origin guards, elevation bootstrap (`runas` relaunch, single instance mutex), `scripts/verify.ps1` checklist, first real session recorded to JSONL.
-**DoD (Windows):** monitoring `notepad.exe` and `7z.exe` yields a correct tree, real file events with resolved paths, real connections with owner PID; non-elevated start shows the elevation path, not a crash; recorded JSONL replays identically on Linux.
+### Phase 2 — Windows monitoring + agent host (6 d) — Linux ✅ · Win ⏳ (smoke pending)
+Kernel-Process collector (cmdline chain), Kernel-File collector (scope filter, drive-letter mapping, read sampling, fuse), Kernel-Network + `GetExtendedTcpTable` attribution repair, DNS collector, registry collector (optional), gap recorder, agent host with Kestrel + SSE + token/Origin guards, elevation bootstrap (`runas` relaunch, single instance mutex), `scripts/verify.ps1` checklist, `scripts/smoke.ps1` live check, first real session recorded to JSONL.
+**DoD (Windows):** monitoring `notepad.exe` and `7z.exe` yields a correct tree, real file events with resolved paths, real connections with owner PID; non-elevated start shows the elevation path, not a crash; recorded JSONL replays identically on Linux. Verified by `scripts/smoke.ps1`: self-test JSON, live notepad capture, non-empty recording, replay exit 0.
 
 ### Phase 3 — Detection engine (4 d) — Linux ✅
 Correlator + window index, 22 rules with fixtures and reason templates, detection aggregation/escalation, risk scorer, score history, gap→confidence coupling, counterfactual generation, `RULES.md` generator.

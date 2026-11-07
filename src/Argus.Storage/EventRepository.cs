@@ -213,6 +213,35 @@ public sealed class EventRepository(SessionDatabase database)
         return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
     }
 
+    /// <summary>Fetches specific evidence sequence numbers in one round trip.</summary>
+    public IReadOnlyList<BehaviorEvent> BySequence(Guid sessionId, IEnumerable<long> sequenceNumbers)
+    {
+        var values = sequenceNumbers.Distinct().Take(500).ToArray();
+        if (values.Length == 0)
+        {
+            return [];
+        }
+
+        using var connection = _database.Open();
+        using var command = connection.CreateCommand();
+        var placeholders = string.Join(',', values.Select((_, index) => "$s" + index.ToString(CultureInfo.InvariantCulture)));
+        command.CommandText = $"SELECT {Columns} FROM events e WHERE e.session_id = $session AND e.seq IN ({placeholders}) ORDER BY e.seq;";
+        command.Parameters.AddWithValue("$session", sessionId.ToString());
+        for (var i = 0; i < values.Length; i++)
+        {
+            command.Parameters.AddWithValue("$s" + i.ToString(CultureInfo.InvariantCulture), values[i]);
+        }
+
+        using var reader = command.ExecuteReader();
+        var results = new List<BehaviorEvent>(values.Length);
+        while (reader.Read())
+        {
+            results.Add(Map(reader, sessionId));
+        }
+
+        return results;
+    }
+
     private static string? BuildDetailText(BehaviorEvent behaviorEvent)
     {
         var parts = new[] { behaviorEvent.Target, behaviorEvent.HostName, behaviorEvent.Detail }

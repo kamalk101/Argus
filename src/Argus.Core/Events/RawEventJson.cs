@@ -1,8 +1,7 @@
-namespace Argus.Simulator;
+namespace Argus.Core.Events;
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Argus.Core.Events;
 
 /// <summary>
 /// The recorded-session format: one compact JSON object per line. This is the

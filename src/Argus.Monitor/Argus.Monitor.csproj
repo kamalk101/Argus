@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>Argus.Monitor</RootNamespace>
+    <Description>Windows ETW collectors, process metadata, TCP owner attribution and scope filtering.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Argus.Core/Argus.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -15,7 +15,7 @@ malicious. It does not scan a file and print a verdict.
 |---|---|---|
 | 0 | Solution, event contract, docs, scripts | **done** (Linux-verified) |
 | 1 | Core model, scope tracking, scoring, SQLite, replay harness, fixtures | **done** (Linux-verified) |
-| 2 | ETW collectors + elevated agent host | not started — needs Windows |
+| 2 | ETW collectors + elevated agent host | **implemented**; Linux build/tests pass, live capture pending Windows smoke |
 | 3 | Full 22-rule catalogue + correlation | not started |
 | 4 | Dashboard (8 screens) | not started |
 | 5 | Windows end-to-end, reports, tuning | not started |
@@ -24,19 +24,27 @@ malicious. It does not scan a file and print a verdict.
 
 Full plan and phase acceptance criteria: [`PLAN.md`](PLAN.md).
 
-**What is verified today:** 83 unit tests, 14 recorded scenarios replaying through the real
-pipeline with asserted verdicts, SQLite persistence and FTS search round-trip, and a
-throughput measurement of the analysis stage (~47k events/s on synthetic input).
+**What is verified today:** 95 unit tests (60 core, 24 analysis, 11 storage), 14 recorded
+scenarios replaying through the real pipeline with asserted verdicts, SQLite persistence and
+FTS search round-trip, and a throughput measurement of the analysis stage (~67k events/s on
+synthetic input in the latest run). The Windows projects (`Argus.Monitor`, `Argus.Agent`) compile on Linux with
+`EnableWindowsTargeting`, and their platform-neutral mapping, sampling and volume logic is
+covered by the core tests.
 
-**What is not verified:** anything Windows-specific. There is no ETW collector yet, so no
-claim is made about live capture, event loss under load, elevation or WebView2.
+**What is not verified:** live Windows behaviour. ETW delivery, UAC relaunch, the loopback
+API/SSE stream, real file/network capture and the JSONL-to-Linux replay round trip are
+implemented but only a run on Windows can prove them. Use `scripts/smoke.ps1` (elevated) for
+that check; until it passes on the target VM, treat those paths as unverified.
 
 ## Layout
 
 ```
-src/Argus.Core        event contract, scope attribution, path/IP classification, risk scoring
+src/Argus.Core        event contract, scope attribution, path/IP classification, risk scoring,
+                      ETW record mapping, read sampling, volume fuse
 src/Argus.Analysis    rule contracts, correlator, detection aggregation, session pipeline
-src/Argus.Storage     SQLite schema, repositories, FTS5 search, tiered rollups
+src/Argus.Storage     SQLite schema, repositories, FTS5 search, tiered rollups, session recorder
+src/Argus.Monitor     Windows ETW collectors, process metadata, TCP owner table, polling repair
+src/Argus.Agent       elevated host: Kestrel API/SSE, live session, JSONL recording, reports
 src/Argus.Simulator   scenario files, replay driver, expectation assertions
 src/Argus.Cli         `argus` — replay, rules, selftest
 tests/                unit tests + tests/fixtures/scenarios/*.jsonl
@@ -63,8 +71,46 @@ dotnet run --project src/Argus.Cli -- replay tests/fixtures/scenarios --db /tmp/
 dotnet run --project src/Argus.Cli -- rules
 ```
 
-On Windows (including the `tiny` VM): `./scripts/verify.ps1`, or
-`./scripts/verify.ps1 -InstallSdk` if the SDK is missing.
+On Windows (including the `tiny` VM):
+
+```powershell
+./scripts/verify.ps1                 # build + tests + replay + selftest
+./scripts/verify.ps1 -InstallSdk     # if the SDK is missing
+./scripts/smoke.ps1                  # elevated: self-test + live notepad capture + replay
+./scripts/verify.ps1 -Smoke          # both, in one command (elevated)
+```
+
+`smoke.ps1` writes a real session database and `live-session.jsonl` under
+`%TEMP%\argus-smoke`. Copy the JSONL to any machine and replay it through the same pipeline:
+
+```bash
+dotnet run --project src/Argus.Cli -- replay /path/to/live-session.jsonl --assert
+```
+
+## Live agent (Phase 2)
+
+The agent launches one `.exe`, records its process tree and scope-filtered file, network,
+DNS and registry activity, runs the same analysis pipeline as replay, and exposes a loopback
+API. It requires administrator rights for ETW; without them it refuses to start rather than
+pretending to monitor.
+
+```powershell
+# elevated
+dotnet run --project src/Argus.Agent -- --target C:\Windows\System32\notepad.exe `
+    --duration 30 --record $env:TEMP\argus-notepad.jsonl --db $env:TEMP\argus-notepad.db
+
+dotnet run --project src/Argus.Agent -- --self-test --json
+```
+
+Startup prints one JSON line with the ephemeral port, bearer token, session id, database and
+recording paths. Every `/api` route except `/api/health` requires
+`Authorization: Bearer <token>`; `Host` and `Origin` are pinned to `127.0.0.1:<port>`. If the
+agent is not elevated, `--elevate` relaunches through UAC and `--allow-non-elevated` gives a
+deliberately degraded polling-only diagnostic run.
+
+A recording starts with a `$meta` line and is directly replayable on Linux. Live sessions
+mark themselves `incomplete` when ETW loss or channel drops occurred, and the report JSON/HTML
+always states the observation limits.
 
 ## What a detection looks like
 
@@ -79,8 +125,9 @@ weight in the risk calculation. A verdict without those is a bug.
 ## Safety
 
 - The tool never executes anything except the application you select.
-- Test material is a safe behaviour simulator (Phase 2) and recorded JSONL fixtures — no real
-  malware is included, downloaded or executed.
+- Test material is recorded JSONL fixtures and the benign notepad baseline; the safe
+  behaviour simulator lands with the Phase 3/5 test harness. No real malware is included,
+  downloaded or executed.
 - Absence of detections is reported as *no significant indicators*, never as proof of safety.
 - Monitoring gaps (lost events, denied access) are recorded and shown, not hidden.
 

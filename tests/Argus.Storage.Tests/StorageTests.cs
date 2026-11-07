@@ -255,6 +255,67 @@ public sealed class StorageTests : IDisposable
         Assert.Equal(1, _events.Count(Session));
     }
 
+    [Fact]
+    public void SessionRecorder_writes_a_live_session_and_completes_once()
+    {
+        var sessionId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var recorder = new SessionRecorder(_database, new SessionRecord
+        {
+            Id = sessionId,
+            TargetPath = @"C:\argus-test\sample.exe",
+            StartedUtc = T0,
+            AgentVersion = "test",
+        });
+
+        var risk = new RiskAssessment
+        {
+            Score = 30,
+            Band = RiskBand.Suspicious,
+            PeakScore = 30,
+            Contributions = [],
+            Categories = EvidenceCategory.Process | EvidenceCategory.File,
+            Explanation = "recorder test",
+        };
+
+        recorder.UpsertProcess(sessionId, new ProcessRecord(
+            4312, 9999, "sample.exe", @"C:\argus-test\sample.exe", "sample.exe", T0, ProcessScopeState.Root));
+        recorder.AppendEvents([
+            Event(1, EventKind.ProcessStart, 4312, @"C:\argus-test\sample.exe") with { SessionId = sessionId },
+            Event(2, EventKind.FileWrite, 4312, @"C:\argus-test\out.txt", EventCategory.File) with { SessionId = sessionId },
+        ]);
+        recorder.UpsertDetection(sessionId, Detection(2, [1, 2]), 0.4);
+        recorder.AppendScore(sessionId, T0.AddSeconds(1), risk);
+        recorder.AddGaps(sessionId, [new GapEntry(T0, "etw", "buffer overflow", 3, "etw:file")]);
+        recorder.Complete(sessionId, T0.AddMinutes(1), risk, lossEvents: 3, status: "completed");
+
+        var session = _sessions.Get(sessionId);
+        Assert.NotNull(session);
+        Assert.Equal("completed", session.Status);
+        Assert.Equal(3, session.LossEvents);
+        Assert.Equal(30, session.FinalScore!.Value, 3);
+        Assert.Equal(2, _events.Count(sessionId));
+        Assert.Single(_processes.List(sessionId));
+        Assert.Single(_detections.List(sessionId));
+        Assert.Equal(2, _detections.EvidenceFor(_detections.List(sessionId)[0].Id).Count);
+        Assert.Single(_scores.History(sessionId));
+
+        using (var connection = _database.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT COUNT(*) FROM gaps WHERE session_id = $s;";
+            command.Parameters.AddWithValue("$s", sessionId.ToString());
+            Assert.Equal(1L, Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // Completion is final: a second call must not rewrite the stored status.
+        recorder.Complete(sessionId, T0.AddMinutes(2), risk with { Score = 99 }, lossEvents: 0, status: "aborted");
+        var unchanged = _sessions.Get(sessionId);
+        Assert.NotNull(unchanged);
+        Assert.Equal("completed", unchanged.Status);
+        Assert.Equal(3, unchanged.LossEvents);
+        Assert.Equal(30, unchanged.FinalScore!.Value, 3);
+    }
+
     public void Dispose()
     {
         var path = _database.Path;

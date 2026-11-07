@@ -48,6 +48,23 @@ public sealed class PathKeyTests
     }
 
     [Fact]
+    public void FromDevicePath_prefers_the_longest_device_prefix()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [@"\Device\HarddiskVolume1"] = @"C:",
+            [@"\Device\HarddiskVolume10"] = @"D:",
+        };
+
+        Assert.Equal(
+            @"D:\Temp\x.exe",
+            PathKey.FromDevicePath(@"\Device\HarddiskVolume10\Temp\x.exe", map));
+        Assert.Equal(
+            @"C:\Temp\x.exe",
+            PathKey.FromDevicePath(@"\Device\HarddiskVolume1\Temp\x.exe", map));
+    }
+
+    [Fact]
     public void FromDevicePath_leaves_unknown_volume_visible()
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

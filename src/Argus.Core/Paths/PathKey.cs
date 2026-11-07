@@ -142,7 +142,9 @@ public static class PathKey
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(volumeMap);
 
-        foreach (var (device, drive) in volumeMap)
+        // Longest device name first: \Device\HarddiskVolume1 is a prefix of
+        // \Device\HarddiskVolume10 and must not win by dictionary order.
+        foreach (var (device, drive) in volumeMap.OrderByDescending(pair => pair.Key.Length))
         {
             if (path.StartsWith(device, StringComparison.OrdinalIgnoreCase))
             {

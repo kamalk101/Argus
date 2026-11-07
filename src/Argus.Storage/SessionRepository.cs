@@ -53,7 +53,7 @@ public sealed class SessionRepository(SessionDatabase database)
         command.ExecuteNonQuery();
     }
 
-    public void Complete(Guid id, DateTimeOffset endedUtc, RiskAssessment risk, long lossEvents = 0)
+    public void Complete(Guid id, DateTimeOffset endedUtc, RiskAssessment risk, long lossEvents = 0, string status = "stopped")
     {
         ArgumentNullException.ThrowIfNull(risk);
 
@@ -61,7 +61,7 @@ public sealed class SessionRepository(SessionDatabase database)
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE sessions SET
-                status = 'stopped',
+                status = $status,
                 ended_utc = $ended,
                 peak_score = $peak,
                 final_score = $final,
@@ -70,6 +70,7 @@ public sealed class SessionRepository(SessionDatabase database)
             WHERE id = $id;
             """;
 
+        command.Parameters.AddWithValue("$status", status);
         command.Parameters.AddWithValue("$id", id.ToString());
         command.Parameters.AddWithValue("$ended", Db.Text(endedUtc));
         command.Parameters.AddWithValue("$peak", risk.PeakScore);
