@@ -9,12 +9,12 @@ using Argus.Core.Events;
 /// </summary>
 public sealed class ProcessPollingCollector
 {
-    private readonly int _rootPid;
     private readonly Func<int, bool> _isInScope;
     private readonly Action<RawEvent> _emit;
     private readonly TimeSpan _interval;
     private readonly HashSet<int> _known = [];
     private readonly object _gate = new();
+    private int _rootPid;
 
     public ProcessPollingCollector(
         int rootPid,
@@ -26,7 +26,28 @@ public sealed class ProcessPollingCollector
         _isInScope = isInScope;
         _emit = emit;
         _interval = interval;
-        _known.Add(rootPid);
+        if (rootPid > 0)
+        {
+            _known.Add(rootPid);
+        }
+    }
+
+    /// <summary>
+    /// Names the root after the poller started. The monitor runs before the target is
+    /// launched, so the repair path has to learn the root pid afterwards.
+    /// </summary>
+    public void AttachRoot(int rootPid)
+    {
+        lock (_gate)
+        {
+            if (_rootPid > 0)
+            {
+                return;
+            }
+
+            _rootPid = rootPid;
+            _known.Add(rootPid);
+        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)

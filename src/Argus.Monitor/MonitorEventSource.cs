@@ -29,15 +29,19 @@ public sealed class MonitorEventSource : IAsyncDisposable
 
     private EtwCollector? _etw;
     private Task? _processPoll;
+    private ProcessPollingCollector? _processPoller;
     private Task? _tcpPoll;
     private int _startedFlag;
     private int _stoppedFlag;
+    private int _rootPid;
+    private int _rootAttached;
+    private int _captureStartReported;
+    private long _gaps;
 
     /// <summary>
-    /// How long after the target started the first event may arrive before the silence
-    /// counts as a monitoring gap. ETW needs a moment to begin delivering, and the target
-    /// is launched first, so anything it does in that moment is unobserved and must be
-    /// reported rather than left to look like "nothing happened".
+    /// How late the root may be attached after it started before the silence counts as a
+    /// monitoring gap. With capture running first this is measured against ETW already
+    /// being live, so a real value here means something went wrong on the launch path.
     /// </summary>
     public static readonly TimeSpan CaptureStartTolerance = TimeSpan.FromMilliseconds(100);
 
@@ -46,7 +50,11 @@ public sealed class MonitorEventSource : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(options);
 
         _options = options;
-        _scope = new ProcessScopeTracker(options.RootPid, options.RootImagePath);
+        _rootPid = options.RootPid;
+
+        // The tracker starts without a root even when a pid was supplied: SeedRoot attaches
+        // it, so there is exactly one code path that names the root.
+        _scope = new ProcessScopeTracker(0, options.RootImagePath);
         _sampler = new ReadSampler(options.ReadSampleEvery);
         _volume = new VolumeGovernor(options.VolumeThresholdPerSecond);
         _channel = Channel.CreateBounded<RawEvent>(
@@ -66,7 +74,10 @@ public sealed class MonitorEventSource : IAsyncDisposable
 
     public MonitorStats Stats => _stats;
 
-    public int RootPid => _options.RootPid;
+    public int RootPid => Volatile.Read(ref _rootPid);
+
+    /// <summary>True once the monitored root process is known.</summary>
+    public bool HasRoot => Volatile.Read(ref _rootAttached) != 0;
 
     public bool Throttled => _volume.Throttled;
 
@@ -76,7 +87,10 @@ public sealed class MonitorEventSource : IAsyncDisposable
     {
         if (Interlocked.Exchange(ref _startedFlag, 1) != 0)
         {
-            throw new InvalidOperationException("The monitor has already been started.");
+            // The agent enables capture before launching the target (so the launch is not
+            // inside a blind window) and LiveSession.Start starts the monitor again. Enabling
+            // the session twice is meaningless, so this is idempotent rather than an error.
+            return;
         }
 
         if (!OperatingSystem.IsWindows())
@@ -86,22 +100,14 @@ public sealed class MonitorEventSource : IAsyncDisposable
             return;
         }
 
-        var rootStarted = _options.RootStartedUtc ?? DateTimeOffset.UtcNow;
-        var rootEvent = new RawEvent
+        // Two supported orders. With a root pid the caller launched the target already and
+        // this session starts slightly late (reported as a capture-start gap). With no root
+        // pid - the agent's path - capture runs first and the root is attached the moment
+        // the process exists, so nothing the target does is missed.
+        if (RootPid > 0)
         {
-            Ts = rootStarted,
-            Kind = EventKind.ProcessStart,
-            Pid = _options.RootPid,
-            ImageName = EtwEventMapper.FileNameOf(_options.RootImagePath),
-            ImagePath = _options.RootImagePath,
-            Observability = Observability.Direct,
-            Source = EventSourceKind.Polling,
-            Detail = "launch-root",
-        };
-
-        _started[_options.RootPid] = rootStarted;
-        _scope.Observe(_normalizer.Normalize(rootEvent));
-        Write(rootEvent);
+            SeedRoot(RootPid, _options.RootImagePath, _options.RootStartedUtc ?? DateTimeOffset.UtcNow);
+        }
 
         _etw = new EtwCollector(_options, _stats, Accept, _mapper);
         if (!_etw.TryStart(out var kernelError, out var dnsError))
@@ -121,11 +127,12 @@ public sealed class MonitorEventSource : IAsyncDisposable
         if (_options.ProcessPollingRepair)
         {
             var poller = new ProcessPollingCollector(
-                _options.RootPid,
+                RootPid,
                 IsInScope,
                 Accept,
                 _options.PollInterval);
 
+            _processPoller = poller;
             _processPoll = Task.Run(() => poller.RunAsync(_cts.Token), CancellationToken.None);
         }
 
@@ -144,6 +151,138 @@ public sealed class MonitorEventSource : IAsyncDisposable
             var tcp = new TcpPollingCollector(IsInScope, Accept, _options.PollInterval);
             _tcpPoll = Task.Run(() => tcp.RunAsync(_cts.Token), CancellationToken.None);
         }
+    }
+
+    /// <summary>
+    /// Waits until ETW is actually delivering, then returns true.
+    ///
+    /// Enabling the session returns before its pump thread has dispatched anything, so
+    /// launching the target immediately after <see cref="Start"/> still raced the pump.
+    /// Waiting for the first kernel callback (any process on the machine produces one
+    /// quickly) removes that race; a timeout is reported as a gap rather than silently
+    /// launching into a dead sensor.
+    /// </summary>
+    public bool WaitForDelivery(TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (_stats.EtwCallbacks > 0)
+            {
+                return true;
+            }
+
+            if (_etw is null)
+            {
+                return false;
+            }
+
+            Thread.Sleep(5);
+        }
+
+        EmitGap(
+            "capture-not-delivering",
+            string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"The ETW session started but delivered no records within {timeout.TotalMilliseconds:0} ms; the monitored application was launched anyway and early events may be missing."));
+
+        return false;
+    }
+
+    /// <summary>
+    /// Names the root process, which is what makes any event in-scope.
+    ///
+    /// Called by the agent immediately after the target is launched. Before this, every
+    /// event is attributed to no one and dropped as out-of-scope, which is correct: the
+    /// only thing running is the machine's own activity.
+    /// </summary>
+    public bool AttachRoot(int pid, string? imagePath, DateTimeOffset startedUtc)
+    {
+        if (pid <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pid), pid, "The root pid must be a real process id.");
+        }
+
+        if (Interlocked.Exchange(ref _rootAttached, 1) != 0)
+        {
+            return false;
+        }
+
+        Volatile.Write(ref _rootPid, pid);
+        _processPoller?.AttachRoot(pid);
+        SeedRoot(pid, imagePath ?? _options.RootImagePath, startedUtc);
+
+        // Capture was already running, so this measures the launch path, not the sensor.
+        ReportCaptureStart(startedUtc);
+        return true;
+    }
+
+    /// <summary>
+    /// Waits for the ETW session to go quiet so records still in flight are delivered.
+    ///
+    /// ETW delivers asynchronously, so a target that exits immediately still has its last
+    /// records queued. The session used to stop the instant the root process exited and threw
+    /// them away: a probe whose whole tree lived about 80 ms recorded only the synthetic root
+    /// event, while the same tree living 2 s recorded 37 events. Records for a tree that dies
+    /// instantly can arrive hundreds of milliseconds late, so this waits for a floor as well
+    /// as for quiet.
+    /// </summary>
+    public async Task DrainAsync(
+        TimeSpan quiet,
+        TimeSpan maxWait,
+        TimeSpan? minimumWait = null,
+        CancellationToken cancellationToken = default)
+    {
+        var started = DateTimeOffset.UtcNow;
+        var deadline = started + maxWait;
+        var floor = minimumWait ?? TimeSpan.Zero;
+        var last = _stats.EtwCallbacks;
+        var quietSince = DateTimeOffset.UtcNow;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(20), cancellationToken).ConfigureAwait(false);
+
+            var callbacks = _stats.EtwCallbacks;
+            if (callbacks != last)
+            {
+                last = callbacks;
+                quietSince = DateTimeOffset.UtcNow;
+                continue;
+            }
+
+            // A short target's records can arrive later than one quiet window, so never
+            // conclude before the floor has passed.
+            if (DateTimeOffset.UtcNow - quietSince >= quiet && DateTimeOffset.UtcNow - started >= floor)
+            {
+                break;
+            }
+        }
+    }
+
+    /// <summary>Records the root as in-scope and emits its synthetic launch event.</summary>
+    private void SeedRoot(int pid, string? imagePath, DateTimeOffset startedUtc)
+    {
+        var rootEvent = new RawEvent
+        {
+            Ts = startedUtc,
+            Kind = EventKind.ProcessStart,
+            Pid = pid,
+            ImageName = EtwEventMapper.FileNameOf(imagePath),
+            ImagePath = imagePath,
+            Observability = Observability.Direct,
+            Source = EventSourceKind.Polling,
+            Detail = "launch-root",
+        };
+
+        lock (_gate)
+        {
+            _scope.AttachRoot(pid, imagePath);
+            _started[pid] = startedUtc;
+            _scope.Observe(_normalizer.Normalize(rootEvent));
+        }
+
+        Write(rootEvent);
     }
 
     private void Accept(RawEvent rawEvent)
@@ -191,19 +330,21 @@ public sealed class MonitorEventSource : IAsyncDisposable
     }
 
     /// <summary>
-    /// Records the window between the target starting and ETW being enabled.
+    /// Records the window between the target starting and observation beginning.
     ///
-    /// The target is launched first and the session is enabled afterwards (the collector
-    /// needs the root pid), so whatever the application does in that window cannot be
-    /// observed and ETW does not replay it. Measured live: a probe whose first action was
-    /// <c>reg add</c> lost it, while the rest of the batch was captured. Reporting the
-    /// measured window keeps the loss visible instead of letting a partial session look
-    /// complete.
-    ///
-    /// The real fix (enabling capture before the launch) is recorded in the handoff.
+    /// With the agent's ordering (capture first, then launch, then attach) this should
+    /// measure microseconds. It is kept because the other supported ordering - a caller
+    /// that launches first and hands over a root pid - still has a real blind window, and a
+    /// silent loss of those first ~150 ms is exactly what this must not hide. Measured
+    /// live before the reorder: 142-156 ms, and a probe's first `reg add` was lost.
     /// </summary>
     private void ReportCaptureStart(DateTimeOffset launchTime)
     {
+        if (Interlocked.Exchange(ref _captureStartReported, 1) != 0)
+        {
+            return;
+        }
+
         var latency = DateTimeOffset.UtcNow - launchTime;
         if (latency <= CaptureStartTolerance)
         {
@@ -225,20 +366,6 @@ public sealed class MonitorEventSource : IAsyncDisposable
             return rawEvent;
         }
 
-        var change = _volume.Observe(rawEvent.Ts);
-        if (change is not null)
-        {
-            _sampler.SetSampleEvery(change.SampleEvery);
-            if (change.Throttled)
-            {
-                _stats.OnThrottled();
-            }
-
-            EmitGap(change.Reason, string.Create(
-                System.Globalization.CultureInfo.InvariantCulture,
-                $"{change.EventsPerSecond} events/s; read sample 1:{change.SampleEvery}"));
-        }
-
         if (rawEvent.Kind == EventKind.ProcessStart)
         {
             if (_started.TryGetValue(rawEvent.Pid, out var firstSeen))
@@ -256,6 +383,7 @@ public sealed class MonitorEventSource : IAsyncDisposable
             }
 
             _scope.Observe(_normalizer.Normalize(rawEvent));
+            ObserveVolume(rawEvent.Ts);
             return rawEvent;
         }
 
@@ -269,6 +397,8 @@ public sealed class MonitorEventSource : IAsyncDisposable
             _stats.OnOutsideScope();
             return null;
         }
+
+        ObserveVolume(rawEvent.Ts);
 
         if (rawEvent.Kind == EventKind.NetConnect && IsDuplicateConnection(rawEvent))
         {
@@ -321,6 +451,33 @@ public sealed class MonitorEventSource : IAsyncDisposable
 
     private bool IsInScope(int pid) => _scope.ClassifyPid(pid).InScope;
 
+    /// <summary>
+    /// Feeds the volume fuse, which measures what this session actually processes.
+    ///
+    /// It used to observe every ETW record before the scope check. Measured live, unrelated
+    /// system activity pushed the counter to 10 675 events/s, which throttled - and reported a
+    /// gap in - a session whose own target was doing very little, marking a clean run
+    /// incomplete. Machine-wide volume is not this session's problem; its own volume is.
+    /// </summary>
+    private void ObserveVolume(DateTimeOffset timestamp)
+    {
+        var change = _volume.Observe(timestamp);
+        if (change is null)
+        {
+            return;
+        }
+
+        _sampler.SetSampleEvery(change.SampleEvery);
+        if (change.Throttled)
+        {
+            _stats.OnThrottled();
+        }
+
+        EmitGap(change.Reason, string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{change.EventsPerSecond} events/s; read sample 1:{change.SampleEvery}"));
+    }
+
     private void EmitGap(string reason, string message, DateTimeOffset? timestamp = null)
     {
         var gap = new RawEvent
@@ -336,6 +493,7 @@ public sealed class MonitorEventSource : IAsyncDisposable
             Source = EventSourceKind.Polling,
         };
 
+        Interlocked.Increment(ref _gaps);
         _stats.OnForwarded();
         Write(gap);
     }

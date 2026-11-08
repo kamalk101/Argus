@@ -15,6 +15,14 @@ using Argus.Storage;
 /// </summary>
 public sealed class SessionManager : IAsyncDisposable
 {
+    /// <summary>
+    /// How long to wait for the ETW session to actually deliver before launching the target.
+    /// Measured: the pump starts within a few milliseconds on an idle machine, so this is a
+    /// ceiling, not a typical wait. If it expires the monitor records a
+    /// <c>capture-not-delivering</c> gap and the session launches anyway.
+    /// </summary>
+    private static readonly TimeSpan CaptureWarmUp = TimeSpan.FromSeconds(2);
+
     private readonly SseHub _hub;
     private readonly AgentOptions _options;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -106,6 +114,22 @@ public sealed class SessionManager : IAsyncDisposable
 
             try
             {
+                // Capture first, launch second. The target used to be started before the ETW
+                // session was enabled, so everything it did in the first ~150 ms was missed
+                // (measured live, and a probe's first `reg add` and `schtasks /create` were
+                // lost exactly that way). The monitor therefore starts with no root pid and
+                // is told one as soon as the process exists.
+                monitor = new MonitorEventSource(new MonitorOptions
+                {
+                    RootPid = 0,
+                    RootImagePath = targetPath,
+                    Catalog = SensitivePathCatalog.Default(),
+                    SessionName = _options.SessionName,
+                });
+
+                monitor.Start();
+                monitor.WaitForDelivery(CaptureWarmUp);
+
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = targetPath,
@@ -134,17 +158,10 @@ public sealed class SessionManager : IAsyncDisposable
 
                 DrainTargetStreams(process);
 
-                monitor = new MonitorEventSource(new MonitorOptions
+                if (!monitor.AttachRoot(process.Id, targetPath, LaunchTimeOf(process) ?? DateTimeOffset.UtcNow))
                 {
-                    RootPid = process.Id,
-                    RootImagePath = targetPath,
-
-                    // The OS launch time, not the session-creation time: the window between
-                    // the two is exactly the blind spot the capture-start gap measures.
-                    RootStartedUtc = LaunchTimeOf(process) ?? started,
-                    Catalog = SensitivePathCatalog.Default(),
-                    SessionName = _options.SessionName,
-                });
+                    throw new InvalidOperationException("The monitor already had a root process.");
+                }
 
                 var session = new LiveSession(
                     id,

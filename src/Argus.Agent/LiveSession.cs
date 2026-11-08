@@ -22,6 +22,9 @@ using Argus.Storage;
 public sealed class LiveSession : IAsyncDisposable
 {
     private static readonly TimeSpan BatchDelay = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>How long the pump may take to persist what is queued when the session stops.</summary>
+    private static readonly TimeSpan DrainPumpTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ScoreSampleInterval = TimeSpan.FromSeconds(1);
     private const int MaxBatch = 500;
 
@@ -454,6 +457,23 @@ public sealed class LiveSession : IAsyncDisposable
             return;
         }
 
+        // The target exiting does not mean its events have arrived: ETW delivers
+        // asynchronously and the last records are still in flight. Give them a moment before
+        // the session stops, otherwise a short-lived target looks like it did nothing.
+        try
+        {
+            await _monitor
+                .DrainAsync(
+                    TimeSpan.FromMilliseconds(200),
+                    TimeSpan.FromSeconds(2),
+                    minimumWait: TimeSpan.FromMilliseconds(600))
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or InvalidOperationException)
+        {
+            // Stopping anyway is better than hanging on a session that will not quiesce.
+        }
+
         await StopAsync("target-exited", terminateTarget: false).ConfigureAwait(false);
     }
 
@@ -478,12 +498,18 @@ public sealed class LiveSession : IAsyncDisposable
                 // Monitor already stopped.
             }
 
-            _cts.Cancel();
-
             if (_pump is not null)
             {
                 try
                 {
+                    // The monitor completes the channel when it stops, so the pump drains what
+                    // is queued and ends by itself. Cancelling first would discard exactly the
+                    // records the drain above waited for, so only cancel as a fallback.
+                    await _pump.WaitAsync(DrainPumpTimeout).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    _cts.Cancel();
                     await _pump.ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
@@ -491,6 +517,9 @@ public sealed class LiveSession : IAsyncDisposable
                     // Expected.
                 }
             }
+
+            // Background loops (watch, score sampling) still hold the token.
+            _cts.Cancel();
 
             if (terminateTarget)
             {
@@ -507,12 +536,36 @@ public sealed class LiveSession : IAsyncDisposable
                 }
             }
 
+            // Everything the target did has been persisted by now, so this verdict is final.
+            // A session whose only in-scope event is the root says nothing about behaviour:
+            // present that as a gap, not as a quiet, clean run.
+            if (reason == "target-exited" && _pipeline.Snapshot().Counters.EventsInScope <= 1)
+            {
+                _pipeline.Ingest(new RawEvent
+                {
+                    Ts = DateTimeOffset.UtcNow,
+                    Kind = EventKind.MonitorGap,
+                    Pid = 0,
+                    Target = "target-exited-immediately",
+                    Detail = "The monitored application exited before any activity beyond its own start was captured; this session says almost nothing about what it did.",
+                    Observability = Observability.Partial,
+                    Source = EventSourceKind.Polling,
+                });
+            }
+
             var snapshot = _pipeline.Snapshot();
             var stats = _monitor.Stats;
             var loss = stats.EtwLostEvents + stats.ChannelDropped;
             _endedUtc = DateTimeOffset.UtcNow;
             _risk = snapshot.Risk;
             _status = loss > 0 ? "incomplete" : "stopped";
+
+            var lateGaps = snapshot.Gaps.Skip(_gapsRecorded).ToArray();
+            if (lateGaps.Length > 0)
+            {
+                _recorder.AddGaps(Id, lateGaps);
+                _gapsRecorded = snapshot.Gaps.Count;
+            }
 
             _recorder.Complete(
                 Id,

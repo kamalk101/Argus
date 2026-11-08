@@ -4,6 +4,12 @@ using Argus.Core.Paths;
 
 public sealed record MonitorOptions
 {
+    /// <summary>
+    /// Pid of the monitored root. **0 means "not attached yet"**: the monitor enables
+    /// capture first and learns the pid once the target exists (see
+    /// <c>MonitorEventSource.AttachRoot</c>), so no event is missed between launch and
+    /// collection.
+    /// </summary>
     public required int RootPid { get; init; }
 
     public string? RootImagePath { get; init; }

@@ -28,42 +28,87 @@ public sealed class ProcessScopeTracker
 
     private readonly Dictionary<int, Entry> _byPid = [];
 
+    // Observe is called from the ETW pump and from the two repair pollers, and the root can
+    // be attached from the launch thread while all of them are running. A plain dictionary
+    // is not safe for that, so every read and write takes this lock.
+    private readonly object _gate = new();
+
     public ProcessScopeTracker(int rootPid, string? rootImagePath = null)
     {
         RootPid = rootPid;
         RootDirectory = rootImagePath is null ? null : PathKey.DirectoryName(PathKey.Canonicalize(rootImagePath));
+        if (rootPid > 0)
+        {
+            _byPid[rootPid] = new Entry(rootPid, null, ProcessScopeState.Root);
+        }
     }
 
-    public int RootPid { get; }
+    public int RootPid { get; private set; }
 
-    public string? RootDirectory { get; }
+    public string? RootDirectory { get; private set; }
+
+    /// <summary>True once a root pid is known. Before that, nothing can be in scope.</summary>
+    public bool HasRoot => RootPid > 0;
+
+    /// <summary>
+    /// Names the root after the fact.
+    ///
+    /// The monitor now enables ETW before launching the target, so it starts without a root
+    /// pid and attaches it the moment the process exists. Until then nothing is in scope,
+    /// which is correct: the only thing running is the machine's own activity.
+    /// </summary>
+    public void AttachRoot(int rootPid, string? rootImagePath = null)
+    {
+        if (rootPid <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rootPid), rootPid, "A root pid must be a real process id.");
+        }
+
+        lock (_gate)
+        {
+            if (HasRoot)
+            {
+                throw new InvalidOperationException("The scope tracker already has a root pid.");
+            }
+
+            RootPid = rootPid;
+            RootDirectory = rootImagePath is null ? null : PathKey.DirectoryName(PathKey.Canonicalize(rootImagePath));
+            _byPid[rootPid] = new Entry(rootPid, null, ProcessScopeState.Root);
+        }
+    }
 
     /// <summary>Records the event if it is a process lifecycle event, then classifies it.</summary>
     public ScopeDecision Observe(BehaviorEvent behaviorEvent)
     {
         ArgumentNullException.ThrowIfNull(behaviorEvent);
 
-        if (behaviorEvent.Kind == EventKind.ProcessStart)
+        lock (_gate)
         {
-            var decision = ClassifyStart(behaviorEvent);
-            _byPid[behaviorEvent.Pid] = new Entry(
-                behaviorEvent.Pid,
-                behaviorEvent.ParentPid,
-                decision.State);
-            return decision;
-        }
+            if (behaviorEvent.Kind == EventKind.ProcessStart)
+            {
+                var decision = ClassifyStart(behaviorEvent);
+                _byPid[behaviorEvent.Pid] = new Entry(
+                    behaviorEvent.Pid,
+                    behaviorEvent.ParentPid,
+                    decision.State);
+                return decision;
+            }
 
-        if (behaviorEvent.Kind == EventKind.ProcessStop)
-        {
-            return ClassifyPid(behaviorEvent.Pid);
+            return ClassifyPidLocked(behaviorEvent.Pid);
         }
-
-        return ClassifyPid(behaviorEvent.Pid);
     }
 
     public ScopeDecision ClassifyPid(int pid)
     {
-        if (pid == RootPid)
+        lock (_gate)
+        {
+            return ClassifyPidLocked(pid);
+        }
+    }
+
+    private ScopeDecision ClassifyPidLocked(int pid)
+    {
+        if (HasRoot && pid == RootPid)
         {
             return new ScopeDecision(ProcessScopeState.Root, true, "root");
         }
@@ -82,7 +127,7 @@ public sealed class ProcessScopeTracker
 
     private ScopeDecision ClassifyStart(BehaviorEvent start)
     {
-        if (start.Pid == RootPid)
+        if (HasRoot && start.Pid == RootPid)
         {
             return new ScopeDecision(ProcessScopeState.Root, true, "root");
         }
@@ -107,11 +152,13 @@ public sealed class ProcessScopeTracker
                 : new ScopeDecision(ProcessScopeState.Excluded, false, "parent-outside-scope");
         }
 
-        // No parent record. Prefer structural evidence over timing, but only when
-        // the root's directory is application-specific. A shared directory such as
-        // System32 or Program Files is evidence of nothing: attributing every process
-        // there would turn unrelated system activity into session detections.
-        if (RootDirectory is not null
+        // No parent record. Prefer structural evidence over timing, but only when the root's
+        // directory is application-specific. A shared directory such as System32 or Program
+        // Files is evidence of nothing: attributing every process there would turn unrelated
+        // system activity into session detections. Before a root is attached there is no
+        // directory to reason about at all, so nothing qualifies.
+        if (HasRoot
+            && RootDirectory is not null
             && !IsSharedRootDirectory(RootDirectory)
             && start.ImagePath is not null
             && PathKey.IsUnder(PathKey.Canonicalize(start.ImagePath), RootDirectory))

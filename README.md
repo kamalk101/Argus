@@ -24,7 +24,7 @@ malicious. It does not scan a file and print a verdict.
 
 Full plan and phase acceptance criteria: [`PLAN.md`](PLAN.md).
 
-**What is verified today:** 140 unit tests (82 core, 47 analysis, 11 storage), 22 recorded
+**What is verified today:** 143 unit tests (85 core, 47 analysis, 11 storage), 22 recorded
 scenarios replaying through the real pipeline with asserted verdicts, SQLite persistence and
 FTS search round-trip, and live ETW sessions on Windows that produced real `F-002`, `F-003`,
 `F-004` and `F-007` detections from a benign probe. The Windows projects (`Argus.Monitor`, `Argus.Agent`)

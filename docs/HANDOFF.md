@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **140 tests** (82 core, 47 analysis, 11 storage), **22/22** asserted
+Current automated counts: **143 tests** (85 core, 47 analysis, 11 storage), **22/22** asserted
 replay scenarios, 10 of the 23 catalogued rules shipped (`F-001`, `F-002`, `F-003`, `F-004`, `F-005`, `F-007`,
 `N-001`, `P-002`, `P-003`, `X-001`).
 
@@ -450,11 +450,30 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   observed as registry writes on pid 4 (System) and the Task Scheduler service, both out of
   scope. Only the tool launch (`schtasks.exe` + arguments) is in-scope evidence for those; that
   is why `F-003` is a process-channel rule.
-- **Capture starts after the target.** `Process.Start` happens before the ETW session is enabled
-  (the collector needs the root pid), so roughly the first 150 ms of a session is unobserved.
-  The monitor measures it and emits a `capture-start-latency` gap; a live probe whose first
-  actions were `reg add` and `schtasks /create` lost exactly those. Never read a short session as
-  complete.
+- **Capture runs before the target, and the root pid arrives late.** `MonitorEventSource` starts
+  with `RootPid = 0`; the agent enables ETW, waits until it is actually delivering
+  (`WaitForDelivery`), launches the target, then calls `AttachRoot`. Before this the target was
+  launched first and the first ~150 ms of every session was unobserved. `MonitorOptions.RootPid`
+  = 0 is the documented "not attached yet" value, `ProcessScopeTracker.HasRoot` is false until
+  then, and **nothing is in scope while there is no root** — including the
+  "image under the root directory" fallback, which must stay behind `HasRoot`. The old ordering
+  still works for direct callers, and `capture-start-latency` still fires if a caller launches
+  first.
+- **A target that exits fast used to lose its last events.** ETW delivers asynchronously and the
+  session stopped the moment the root exited, cancelling the pump before it drained. The same
+  80 ms probe recorded **1 event** (only the synthetic root) and the same tree living 2 s recorded
+  37. Records for an instantly-dying tree can arrive later than 2 s of quiet, so `LiveSession`
+  now drains with a floor (`DrainAsync`, 600 ms floor / 2 s ceiling), and the pump is awaited
+  (channel completed by the monitor) before its token is cancelled. Same probe now records
+  11–228 events. If a session still sees nothing beyond the root, it stops with a
+  `target-exited-immediately` gap instead of looking like a quiet clean run.
+- **The volume fuse counts in-scope events only.** It used to observe every ETW record before the
+  scope check, so unrelated system file activity pushed it to 10 675 events/s and reported a
+  `volume-throttle` gap in a session whose own target was doing very little (which also marked a
+  clean run `incomplete`). Machine-wide volume is not the session's volume.
+- **The scope tracker is shared.** `Observe`/`ClassifyPid` are called from the ETW pump and both
+  repair pollers, and the root can now be attached from the launch thread while those run, so the
+  pid table is behind a lock. Do not add unlocked state to it.
 - If you run tests on Linux, use `~/.dotnet/dotnet` if `dotnet` is not on `PATH`.
 
 ## 11. Reporting discipline
@@ -561,13 +580,44 @@ it on Windows.
    `registryEvents: 2`. A write whose handle was opened before capture began is still
    unattributable and stays out of the stream (§10).
 
-Also found and reported (not yet fixed): the target is launched **before** the ETW session is
-enabled, so the first ~150 ms of every session is unobserved. It is now measured and surfaced as
-`capture-start-latency` (live: 142–156 ms). The real fix is to enable capture first — the root pid
-is only needed for scope, so this needs a late root attach — and it is the next infrastructure
-item.
+### 12.4 Capture starts before the target launches (infrastructure item)
 
-### 12.4 Next in Phase 3
+The previous pass found that the target was launched **before** the ETW session was enabled, so
+the first ~150 ms of every session was unobserved (measured 142–156 ms, and a probe's first
+`reg add`/`schtasks /create` were lost). That is now fixed, and the fix exposed two more losses
+that were worse than the original one.
+
+1. **Ordering.** The agent now enables ETW with `RootPid = 0`, waits for delivery
+   (`WaitForDelivery`, bounded at 2 s, reports `capture-not-delivering` on timeout), launches the
+   target, and attaches the root pid (`MonitorEventSource.AttachRoot`). `ProcessScopeTracker`
+   gained `AttachRoot`/`HasRoot`; nothing is in scope before the root exists, and the
+   "image under the root directory" fallback is now behind `HasRoot` — without that guard a
+   pre-launch probe was still attributed by directory. `Start()` is idempotent because
+   `LiveSession.Start` starts the monitor again. `MonitorOptions.RootPid` documents 0 as
+   "not attached yet", so the old launch-first ordering keeps working.
+2. **Short-lived targets lost everything.** With the ordering fixed, an 80 ms target recorded
+   **1** event: `LiveSession.WatchAsync` stopped the session on root exit, and `StopAsync`
+   cancelled the pump before it drained the channel. ETW records for such a tree can arrive
+   hundreds of milliseconds late (measured: event timestamp +637 ms), well after one quiet
+   window. `MonitorEventSource.DrainAsync` (200 ms quiet, 600 ms floor, 2 s ceiling) now runs
+   before the stop, the pump is awaited to completion (the monitor completes the channel), and
+   cancel is only the fallback. Same probe: 11 events. Longer tree: 37 → 228 events.
+   A session that still sees nothing beyond the root ends with a `target-exited-immediately`
+   gap, decided after the pump has persisted everything (judging it earlier produced the gap even
+   though the child's records landed afterwards).
+3. **The volume fuse was counting the whole machine.** It observed every ETW record *before* the
+   scope check, so an unrelated system burst hit 10 675 events/s, throttled reads and emitted a
+   `volume-throttle` gap for a session whose target was idle — and a gap marks the session
+   `incomplete`. It now observes in-scope events only (process starts included, via
+   `ObserveVolume`).
+
+Verified live: the 30 s two-channel probe records 228 events with **0 gaps** and still detects
+`F-002` + `F-003`; the 80 ms probe records 11 events with 0 gaps; `--self-test --json` is green
+with 0 mapping failures; `verify.ps1` passes (tests + 22 fixtures + smoke). Tests: 143 (85 core,
+47 analysis, 11 storage), with three new scope tests covering the no-root window, late attach and
+double attach.
+
+### 12.5 Next in Phase 3
 
 The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
 aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use

@@ -133,4 +133,49 @@ public sealed class ScopeTrackerTests
         Assert.False(decision.InScope);
         Assert.Equal("pid-not-seen", decision.Reason);
     }
+
+    [Fact]
+    public void Without_a_root_nothing_is_in_scope()
+    {
+        // The monitor now enables ETW before the target exists, so there is a window where
+        // it has no root. Machine-wide noise in that window must be dropped, not attributed.
+        var tracker = new ProcessScopeTracker(0, @"C:\argus-test\sample.exe");
+
+        Assert.False(tracker.HasRoot);
+        Assert.False(tracker.ClassifyPid(0).InScope);
+        Assert.False(tracker.ClassifyPid(4312).InScope);
+
+        var decision = tracker.Observe(Event(EventKind.ProcessStart, 4312, 9999, @"C:\argus-test\sample.exe"));
+
+        Assert.False(decision.InScope);
+    }
+
+    [Fact]
+    public void Attaching_the_root_late_makes_it_and_its_children_in_scope()
+    {
+        // Regression for the launch race: capture starts first, the root pid arrives after
+        // Process.Start. Events the target produced in between are in the channel already
+        // and must resolve as in-scope once the root is known.
+        var tracker = new ProcessScopeTracker(0, @"C:\argus-test\sample.exe");
+        tracker.AttachRoot(4312, @"C:\argus-test\sample.exe");
+
+        Assert.True(tracker.HasRoot);
+        Assert.Equal(ProcessScopeState.Root, tracker.ClassifyPid(4312).State);
+        Assert.True(tracker.ClassifyPid(4312).InScope);
+
+        var child = tracker.Observe(Event(EventKind.ProcessStart, 5200, 4312, @"C:\Windows\System32\cmd.exe", 5));
+
+        Assert.Equal(ProcessScopeState.Confirmed, child.State);
+        Assert.True(child.InScope);
+    }
+
+    [Fact]
+    public void Attaching_a_root_twice_is_rejected()
+    {
+        var tracker = new ProcessScopeTracker(4312, @"C:\argus-test\sample.exe");
+
+        Assert.True(tracker.HasRoot);
+        Assert.Throws<InvalidOperationException>(() => tracker.AttachRoot(4313, null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ProcessScopeTracker(0).AttachRoot(0, null));
+    }
 }
