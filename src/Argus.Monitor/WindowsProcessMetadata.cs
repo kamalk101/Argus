@@ -1,8 +1,6 @@
 namespace Argus.Monitor;
 
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Argus.Core.Events;
 using Argus.Core.Monitoring;
@@ -50,47 +48,12 @@ public static class WindowsProcessMetadata
     }
 
     /// <summary>
-    /// Authenticode state of the installed image. <see cref="X509Certificate.CreateFromSignedFile"/> only
-    /// reports that a certificate is attached, so a revoked or self-signed binary would read as signed.
-    /// The chain is therefore built explicitly and the result is three-way: <c>Valid</c> when it chains to
-    /// a trusted root, <c>Invalid</c> when a signature exists but does not verify, and <c>Unknown</c> when
-    /// there is no file to inspect (protected process, deleted path).
+    /// Authenticode state of the installed image, delegated to <see cref="ImageSignature"/>, which uses
+    /// WinVerifyTrust. The previous implementation read the embedded certificate only, so every
+    /// catalog-signed binary in System32 (whoami, ping, most of the OS) came back as unsigned —
+    /// measured, and a false statement about a genuine Microsoft file.
     /// </summary>
-    private static SignatureStatus VerifySignature(string? imagePath)
-    {
-        if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
-        {
-            return SignatureStatus.Unknown;
-        }
-
-        try
-        {
-            using var certificate = X509Certificate.CreateFromSignedFile(imagePath);
-            using var chain = new X509Chain
-            {
-                // Revocation lookups need the network and would stall a capture; this reports
-                // chain trust, and the reason text never claims revocation was checked.
-                ChainPolicy =
-                {
-                    RevocationMode = X509RevocationMode.NoCheck,
-                    VerificationFlags = X509VerificationFlags.NoFlag,
-                },
-            };
-
-            return chain.Build(new X509Certificate2(certificate))
-                ? SignatureStatus.Valid
-                : SignatureStatus.Invalid;
-        }
-        catch (CryptographicException)
-        {
-            // No signature, or one that cannot be parsed. This is the unsigned case.
-            return SignatureStatus.Invalid;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            return SignatureStatus.Unknown;
-        }
-    }
+    private static SignatureStatus VerifySignature(string? imagePath) => ImageSignature.Verify(imagePath);
 
     private static string? QueryImagePath(IntPtr handle)
     {

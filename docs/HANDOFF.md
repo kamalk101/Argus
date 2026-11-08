@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **235 tests** (96 core, 128 analysis, 11 storage), **47/47** asserted
+Current automated counts: **237 tests** (96 core, 130 analysis, 11 storage), **47/47** asserted
 replay scenarios, and **all 23 rules** in `PLAN.md` §6.3 shipped (`F-001` … `F-008`, `N-001` … `N-005`,
 `P-001` … `P-008`, `X-001`, `X-002`).
 
@@ -899,7 +899,64 @@ Not verified live this pass: a session where the volume fuse opens mid-run (need
 sustained for 5 s). Coverage-with-gaps is verified by unit test and by replaying real recordings that
 already contain gaps, listed above.
 
-### 12.11 Next in Phase 3
+### 12.11 X-002 under real activity, and the catalog signature defect it exposed
+
+X-002 (Startup write then execute) was the last rule that had only ever been replayed from a hand-made
+fixture. Verifying it live required touching the real machine startup folder, so the probe was written
+to be self-cleaning and was proven self-cleaning before it was ever run under the monitor: copy a benign
+signed binary to
+`C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\argus-x002-probe.exe`, launch that exact
+path, then remove it in a `finally` and log the outcome. Run standalone first, then under the agent;
+after every run the folder held only `desktop.ini`. Nothing was left behind.
+
+Two defects came out of it, and neither was visible from the fixtures.
+
+**1. X-002 could not fire for the case it was written for.** The launched payload arrived as
+`observability=partial` with `imagePath=null`: the kernel process-start record names only the image, and
+the metadata lookup lost the race against a process that exits in milliseconds. The rule required a
+resolved path on both sides, so it reported nothing while F-001 and F-007 fired on the same write. A
+payload that lives long enough to be inspected is the exception, not the rule. The fallback accepts a
+launch only when the launched image name equals the written file's name **and** the launching process is
+the one that wrote it, and carries `match_basis=path` or `match_basis=name-and-parent` so the weaker
+basis is never presented as a path equality. A same-named process with any other parent still stays
+quiet.
+
+**2. P-005 was making a false statement about Microsoft binaries.** It fired at severity 30 on a copy of
+`whoami.exe`, having concluded "no trusted publisher signature". That is wrong twice over:
+
+- `X509Certificate.CreateFromSignedFile` reads an *embedded* certificate only, and most of `System32`
+  carries none — Windows verifies those against a signed catalog. `Get-AuthenticodeSignature` called the
+  original and the copy `Valid, type=Catalog, signer=Microsoft Windows`.
+- Replacing it with `WinVerifyTrust` did not fix it, because that API resolves embedded signatures only
+  and returns `TRUST_E_NOSIGNATURE` (`0x800B0100`) for catalog-signed files — the identical code it
+  returns for a file with no signature at all. Measured directly, which is the only reason the second
+  wrong version was not shipped.
+
+The monitor now falls back to the catalog: hash the file with `CryptCATAdminCalcHashFromFileHandle2`,
+locate the catalog with `CryptCATAdminEnumCatalogFromHash`, then verify the catalog file itself with
+`WinVerifyTrust`. Absent from every catalog means `Invalid`; a lookup that failed for any other reason
+stays `Unknown`, because "the lookup broke" is not evidence about the file. Measured end to end:
+`whoami.exe` and `notepad.exe` → `Valid`, a freshly built unsigned .NET apphost → `Invalid`, a missing
+path → `Unknown`.
+
+Verified live, both match bases of X-002:
+
+```
+signed copy (resolved path)      Suspicious 63.0   F-007, F-001, X-002   signature=valid, no P-005
+unresolved payload               Malicious 65.7    F-007, F-001, P-005, X-002
+```
+
+Both replays: 0 gaps, complete coverage, deterministic. The startup folder was clean after each.
+
+One limitation remains and is stated in `docs/RULES.md` rather than papered over: a signature is only
+known if the process is still alive when the sensor opens it, so a payload that exits in milliseconds
+often yields no signature at all and P-005 misses it rather than guessing. The unsigned case was verified
+with the signature API directly; capturing it live is a race the monitor loses more often than it wins.
+
+Tests: 237 (96 core, 130 analysis, 11 storage); 47/47 fixtures. The two new tests cover the fallback and
+the name-without-parent quiet twin.
+
+### 12.12 Next in Phase 3
 
 
 The catalogue is complete (23 of 23, each with firing and quiet fixtures). What remains for Phase 3
@@ -909,3 +966,10 @@ confirm the replayed verdict matches, and keep `docs/RULES.md` in step with the 
 to tune with fixtures rather than suppression: the interpreter scratch `.ps1` in `%TEMP%`
 (§10), and utility `cmd.exe`/`powershell.exe` children under `P-002` when the parent is an
 installer or IDE.
+
+Two things worth picking up from§12.11: the metadata race that hides signatures for short-lived
+processes (a bounded retry in the metadata lookup would convert misses into results, but it runs on
+the ETW consumption thread, so measure before adding latency), and whether F-001 plus X-002 on a single
+write *should* reach Malicious — fixture 46 scores 39.6 rather than 85 because both carry the file
+category and the scorer correctly refuses to treat them as independent. That is a grouping decision,
+not a rule change.

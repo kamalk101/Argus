@@ -47,14 +47,32 @@ the kernel retires the object — those pointers are reused, and the same value 
 belonging to two unrelated keys.
 
 **How P-005 knows a binary is unsigned (measured, and three-way on purpose).**
-`RawEvent.Signature` carries a `SignatureStatus` of `Valid`, `Invalid` or nothing. The monitor
-builds the Authenticode chain explicitly (`X509Chain.Build`, revocation lookups off so a capture
-does not stall on the network) because `X509Certificate.CreateFromSignedFile` only reports that a
-certificate is *attached*: a self-signed binary passes that check. No value at all means the sensor
-never established a trust result — a protected process, or a path that vanished before it was read —
-and the rule refuses to read that as "unsigned". Most unsigned utilities on a workstation are
-harmless, which is why P-005 is the quietest process signal at severity 30 and adds provenance, not
-intent.
+`RawEvent.Signature` carries a `SignatureStatus` of `Valid`, `Invalid` or nothing, and no value at all
+is never read as "unsigned". Two wrong ways to establish it were measured on this machine before the
+current one was kept, and both are worth recording because they look correct:
+
+- `X509Certificate.CreateFromSignedFile` reads only an *embedded* certificate. Most of `System32`
+  carries none — Windows verifies those by hashing the file and looking the hash up in a signed
+  catalog. A rule built on that API reported that a copy of `whoami.exe` had "no trusted publisher
+  signature" while `Get-AuthenticodeSignature` called it `Valid, type=Catalog, signer=Microsoft
+  Windows`, before and after the copy. That is a false fact about provenance, not a threshold to tune.
+- `WinVerifyTrust` resolves embedded signatures only. Against a catalog-signed file it returns
+  `TRUST_E_NOSIGNATURE` (`0x800B0100`) — byte for byte the same code as a file with no signature at
+  all — so its "no signature" answer cannot be trusted either. Measured directly.
+
+The monitor therefore tries embedded Authenticode, and on `TRUST_E_NOSIGNATURE` looks the file's
+SHA-256 up with `CryptCATAdminEnumCatalogFromHash` and verifies the catalog file it finds. A file with
+no embedded signature and no catalog entry is `Invalid`; a failed lookup for any other reason is
+`Unknown`, so an unreadable file or an unavailable trust provider never becomes an accusation.
+Revocation is not checked and chain retrieval is cache-only, so the result means "the chain is
+trusted", never "the publisher is not revoked". Measured end to end: `whoami.exe` and `notepad.exe`
+→ `Valid`, a freshly built unsigned .NET apphost → `Invalid`, a missing path → `Unknown`.
+
+One live limitation, stated rather than papered over: the signature is only known if the process is
+still alive when the sensor opens it. A payload that exits in milliseconds often yields no value at
+all — observed repeatedly — so P-005 misses those rather than guessing. Most unsigned utilities on a
+workstation are harmless, which is why P-005 is the quietest process signal at severity 30 and adds
+provenance, not intent.
 
 **How P-008 infers cross-process creation (it is an inference, and the report says so).**
 Nothing in the enabled kernel keywords reports `CreateRemoteThread` or an APC injection, so there is
@@ -147,8 +165,21 @@ all 18 names.
 
 `X-002` pairs a persistence write with execution of **that same canonical path**. Matching on the file
 name instead would correlate every install where a helper shares a name with something in Startup, so
-the rule compares `PathKey`s and refuses to fire when either side is unresolved. It reads only a write
-that changed content — a bare create is create-or-open and proves nothing was written.
+the rule compares `PathKey`s. It reads only a write that changed content — a bare create is
+create-or-open and proves nothing was written.
+
+**A path-only match turned out to miss the real thing, so there is a narrow fallback.** Measured live:
+a payload launched out of the real Startup folder arrived as `observability=partial` with
+`imagePath=null`, because the kernel process-start record names only the image and the metadata lookup
+lost the race against a process that exits in milliseconds. Payloads are short-lived by nature, so that
+is the common case rather than the edge — the rule would have been unable to fire for the very scenario
+it was written for. When no path was resolved, X-002 accepts a launch only if **both** the launched
+image name equals the written file's name **and** the launching process is the process that performed
+the write, and it records `match_basis=path` or `match_basis=name-and-parent` so the evidence panel
+cannot present the weaker match as a path equality. Name alone is not enough: a same-named process with
+any other parent stays quiet, which is fixture 47. Both bases were then exercised against real ETW —
+the resolved-path run and the unresolved-path run each produced X-002 at severity 85, giving
+`Malicious 65.7` alongside F-001, F-007 and P-005.
 
 Volume rules needed one sensor addition: `TcpIp/Send` and `TcpIp/Recv` were being dropped, because a
 connection record says where data is going, not how much went. Both now map to `NetFlow` with
