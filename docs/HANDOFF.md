@@ -86,8 +86,8 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **149 tests** (87 core, 51 analysis, 11 storage), **24/24** asserted
-replay scenarios, 11 of the 23 catalogued rules shipped (`F-001` … `F-007`, `N-001`, `P-002`,
+Current automated counts: **156 tests** (89 core, 56 analysis, 11 storage), **26/26** asserted
+replay scenarios, 12 of the 23 catalogued rules shipped (`F-001` … `F-008`, `N-001`, `P-002`,
 `P-003`, `X-001`).
 
 ## 4. Architecture and data flow
@@ -312,9 +312,10 @@ The two F-005 hits are a rule-quality finding, not a regression: ETW `FileIO/Cre
 `fileCreate` in System32 and `F-005` reports it as a system write. This was triaged at the
 start of Phase 3 — see §12.
 
-Still unverified after this pass: registry capture under real activity, event loss and the
-volume fuse under load, `7z.exe` or any non-trivial target, the UAC consent click, and the
-dashboard. Do not claim ETW works from compilation or replay alone.
+Still unverified after this pass: registry capture under real activity (and now known to be
+limited — user-mode value writes never reached the kernel registry stream in any measurement,
+see §12.7), event loss and the volume fuse under load, `7z.exe` or any non-trivial target, the
+UAC consent click, and the dashboard. Do not claim ETW works from compilation or replay alone.
 
 ## 8. Immediate tasks, in order
 
@@ -482,6 +483,12 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   Leaving it to `AttachRoot` alone made the legacy path (root supplied up front) buffer forever;
   `--self-test` caught it with "mapped but none of the generated process activity was seen". If a
   session records only its root event, check this first.
+- **Registry event names must match exactly.** `Registry/KCBCreate` / `Registry/KCBDelete` are the
+  kernel's key-cache traffic; their header pid is whichever process triggered a cache operation, so
+  substring matching turned them into writes "by the target" (104 bogus `registryDeleteValue` events
+  for a session that ran `echo hello`). Only `Registry/Open|Create|Close|SetValue|DeleteValue` are
+  mapped. Related: real user-mode value writes (`reg add`, `Set-ItemProperty`) do not appear in the
+  kernel registry stream on this VM, so do not assert that the registry write path is proven.
 - **A rename is two records, not one.** `FileIO/Rename` carries the source path and
   `FileIo/RenamePath` the destination, both with the same `FileKey`. The old mapper treated each as
   a whole rename and filled the missing side with the present one, so `ren a.docx b.locked` became
@@ -662,9 +669,59 @@ final) is excluded because it is the commonest extension change on a desktop. Ve
 a probe renaming 12 files across 8 directories produced `F-006` at 20.5 Suspicious with 0 gaps,
 and replay of the same recording reproduces it. New fixtures 23 (`rename-burst-ransomware`,
 fires) and 24 (`bulk-rename-benign`: 60 in-folder renames with the extension kept plus 12 finished
-downloads, quiet). Tests: 149 (87 core, 51 analysis, 11 storage); 24/24 fixtures.
+downloads, quiet). Tests: 156 (89 core, 56 analysis, 11 storage); 26/26 fixtures.
 
-### 12.6 Next in Phase 3
+### 12.6 F-008: credential store access — done
+
+`F-008` (70, file, T1555) fires when a process reads a store that belongs to another program:
+browser login databases (Chrome, Edge, Brave, Opera, Firefox `logins.json`/`key4.db`), SSH private
+keys, Windows credential files, DPAPI master keys and wallet files. The owning program is excluded
+(`chrome.exe` reading its own `Login Data`, `ssh.exe`/`git.exe` reading their own key), because
+flagging the normal case would make the rule useless on any machine with a browser.
+
+Two design points worth keeping:
+
+- **Recognition is by path shape, not only by the configured catalog.** The real locations are
+  user-profile paths, and replay deliberately drops environment-dependent catalog entries, so a
+  rule that could only match a live profile could never be replayed. The catalog is still consulted
+  first, so a user-configured entry can supply the label.
+- **Access means read or open-existing, never write.** A `FileCreate` with
+  `CreatedOrTruncated` belongs to the write rules; `FileChangeEvidence.Evidence` is carried in the
+  factors so the distinction is visible in the finding.
+
+Verified live: `cmd /c type "<Chrome Login Data>"` plus a decoy `~/.ssh/id_rsa` read by the same
+`cmd` produced `F-008` at 63.0 Suspicious with 0 gaps, and replay of the recording reproduces it.
+Fixtures 25 (fires: login database, SSH key, wallet) and 26 (`browser-reads-own-credentials`, quiet:
+Chrome and the SSH client reading their own stores through the same paths).
+
+### 12.7 Two sensor corrections found while verifying F-008
+
+Both were found by watching the *volume* of a session, not by a failing test, and both change what
+the catalogue may claim:
+
+1. **Kernel registry cache traffic was being reported as value writes.** `Registry/KCBCreate` and
+   `Registry/KCBDelete` are the kernel's own key-control-block traffic, whose header process id is
+   whichever process happened to trigger a cache operation. Matching event names by substring
+   ("Delete", "Set") mapped them to `RegistryDeleteValue`/`RegistrySetValue`. A session that only ran
+   `echo hello` recorded **104** `registryDeleteValue` events against
+   `HKLM\SYSTEM\ControlSet001\Control\SafeBoot` — a third of its event stream, attributed to the
+   target. Registry mapping now matches exact names (`Registry/Open|Create|Close|SetValue|
+   DeleteValue`) and ignores everything else.
+2. **User-mode registry writes are not in the stream at all.** With the noise gone it became
+   apparent that `reg add …\CurrentVersion\Run` and a PowerShell `Set-ItemProperty` on the same key
+   produce no `RegistrySetValue` record — the key name never appears in the raw registry records, and
+   the `Registry/SetValue` events that do arrive are kernel performance writes with `KeyName` empty
+   and `KeyHandle=0`, which the mapper correctly refuses to attribute. So `F-002` is in practice a
+   process-channel rule (the earlier "live 0 → 3 registry events" measurement was this noise), and
+   `docs/RULES.md` now says so instead of implying the registry path is proven.
+3. **Directory removal occasionally surfaces, file removal never has.** Five `del`s one second apart,
+   and 26 `del`s in an earlier probe, produced zero file events; `rd /s /q` produced a `fileDelete`
+   for the *directory* path in two runs out of three. Whatever the delete half of `F-006` becomes, it
+   cannot be built on `del`.
+
+Tests: 156 (89 core, 56 analysis, 11 storage); 26/26 fixtures; `verify.ps1` and `verify.sh` green.
+
+### 12.8 Next in Phase 3
 
 The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
 aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use

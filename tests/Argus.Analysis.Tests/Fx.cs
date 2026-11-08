@@ -131,13 +131,14 @@ internal static class Fx
     public static (SessionSnapshot Snapshot, IReadOnlyList<BehaviorEvent> Events) Run(
         IEnumerable<RawEvent> events,
         TimeSpan? mergeWindow = null,
-        RiskOptions? risk = null)
+        RiskOptions? risk = null,
+        string? rootImagePath = null)
     {
         var pipeline = new SessionPipeline(new SessionPipelineOptions
         {
             SessionId = Guid.Parse("11111111-2222-3333-4444-555555555555"),
             RootPid = RootPid,
-            RootImagePath = RootPath,
+            RootImagePath = rootImagePath ?? RootPath,
             Catalog = Catalog,
             MergeWindow = mergeWindow ?? TimeSpan.FromMinutes(5),
             Risk = risk ?? RiskOptions.Default,

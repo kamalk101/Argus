@@ -2,7 +2,7 @@
 
 Generated view: `dotnet run --project src/Argus.Cli -- rules` (add `--json` for machine output).
 
-This is **11 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
+This is **12 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
 reason, counterfactual and at least two fixtures each.
 
 ## Shipped rules
@@ -17,9 +17,22 @@ reason, counterfactual and at least two fixtures each.
 | F-004 | Mass file creation | 55 | file | T1105, T1486 | aggregated (60 s) |
 | F-005 | Write to a system location | 65 | file | T1543, T1574 | per-event |
 | F-006 | Destructive rename burst (ransomware shape) | 85 | file | T1486 | aggregated (60 s) |
+| F-008 | Credential store accessed | 70 | file | T1555 | per-event |
 | F-007 | Executable payload dropped in a writable location | 50 | file | T1105 | per-event |
 | N-001 | Connection to a risky service port | 45 | network | T1021 | per-event |
 | X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated (60 s) |
+
+**What the registry sensor can and cannot see (measured).** Value writes performed by a normal
+program do not reach the stream: `reg add …\CurrentVersion\Run` and a PowerShell `Set-ItemProperty`
+on the same key produced no `RegistrySetValue` event at all, and the key name never appeared in the
+raw registry records. What arrives instead are opens, queries and the kernel's own key-control-block
+traffic — `Registry/KCBCreate`, `Registry/KCBDelete` — whose header process id is whichever process
+triggered a cache operation. Those used to be mapped as value writes by substring, so a session that
+only ran `echo hello` collected 104 `registryDeleteValue` events against
+`HKLM\SYSTEM\…\SafeBoot`: a third of the recorded stream, attributed to the target. They are now
+ignored, which means `F-002` rests on its process-channel evidence in practice, and an
+`F-002` finding from a `RegistrySetValue` event should be treated as the rarer case until the write
+path itself is verified.
 
 A rule's channel names what the finding is **about**, not which sensor produced it. `F-002` is a
 registry autostart write whether it was seen as a `RegistrySetValue` or as
@@ -28,6 +41,22 @@ registry autostart write whether it was seen as a `RegistrySetValue` or as
 scheduled-task registration, and it is a process-channel rule because the task file itself is
 written by the Task Scheduler service, which is out of scope — only the tool launch is in-scope
 evidence.
+
+### F-008: whose credentials, and which ones
+
+`F-008` fires when a process reads a credential store that belongs to a different program: browser
+login databases, SSH private keys, Windows credential files, DPAPI master keys, wallet files. The
+owning program is excluded — Chrome reading its own `Login Data` and `ssh.exe` reading its own key
+are the normal case, and flagging them would make the rule useless on any machine with a browser.
+
+Stores are recognised by **path shape**, not only by the configured catalog, because the real
+locations are user-profile paths and replay deliberately drops environment-dependent catalog
+entries. A rule that could only match a live profile could not be replayed, and a rule that cannot
+be replayed cannot be shown to work twice.
+
+Two limits are worth stating plainly. It only sees reads and opens, so a credential store reached
+over the network, or through a service that is out of scope, is invisible. And an un-attributable
+read — a path that could not be resolved — produces nothing rather than a guess.
 
 ### F-006: what it counts, and what it cannot see
 
@@ -38,14 +67,17 @@ either keeps the extension or works inside one folder, so breadth plus an append
 signal. Renames that merely drop an intermediate extension (`.part`, `.crdownload`, `.tmp`) are
 never counted: finishing a download looks identical otherwise.
 
-**The delete half of this rule does not exist, because the sensor cannot see deletions.** Measured
-live: 26 files deleted by `del` produced **zero** file events — the kernel `FileIO` subscription
-used here reports creates, writes, reads and renames, but not `del`/`DeleteFile`. So a wiper that
-only deletes is invisible to `F-006` and to the whole pipeline; `F-006` keys on the
-rewrite-then-rename shape encryptors leave behind. Never present a quiet `F-006` as evidence that
-nothing was destroyed, and do not "fix" this by treating a create as a delete. Closing the gap
-needs a different sensor (a minifilter or `FileIO/SetInfo` with `FileDispositionInformation`), and
-it is recorded as an open item in `docs/HANDOFF.md` §10.
+**The delete half of this rule does not exist, because the sensor cannot see file deletions.**
+Measured live: 26 files deleted by `del` produced **zero** file events, and a second probe with five
+deletes, one second apart, also produced zero — the kernel `FileIO` subscription used here reports
+creates, writes, reads and renames, but not `del`/`DeleteFile`. Removing a *directory* (`rd /s /q`)
+did surface a `fileDelete` for the directory path in two runs out of three, which is a narrower
+signal than it looks: it names a folder, not the files inside it. So a wiper that only deletes is
+invisible to `F-006` and to the whole pipeline; `F-006` keys on the rewrite-then-rename shape
+encryptors leave behind. Never present a quiet `F-006` as evidence that nothing was destroyed, and
+do not "fix" this by treating a create as a delete. Closing the gap needs a different sensor (a
+minifilter or `FileIO/SetInfo` with `FileDispositionInformation`), and it is recorded as an open item
+in `docs/HANDOFF.md` §10.
 
 ### Thresholds and volume
 

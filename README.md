@@ -16,7 +16,7 @@ malicious. It does not scan a file and print a verdict.
 | 0 | Solution, event contract, docs, scripts | **done** (Linux-verified) |
 | 1 | Core model, scope tracking, scoring, SQLite, replay harness, fixtures | **done** (Linux-verified) |
 | 2 | ETW collectors + elevated agent host | **done on Windows** for process, file, network+DNS capture and the API guards; `--elevate` UAC consent click unverified (unattended VM), registry volume and loss under load unverified |
-| 3 | Full 22-rule catalogue + correlation | **in progress**; 11 of the 23 catalogued rules shipped and verified live (persistence, system write, payload drop, mass file creation, ransomware-shaped rename burst, unexpected shell, encoded interpreter, risky port, persistence-then-network) |
+| 3 | Full 22-rule catalogue + correlation | **in progress**; 12 of the 23 catalogued rules shipped and verified live (persistence, system write, payload drop, mass file creation, ransomware-shaped rename burst, credential-store access, unexpected shell, encoded interpreter, risky port, persistence-then-network) |
 | 4 | Dashboard (8 screens) | not started |
 | 5 | Windows end-to-end, reports, tuning | not started |
 | 6 | ML advisory layer | not started |

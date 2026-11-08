@@ -301,6 +301,47 @@ public sealed class MonitoringTests
     }
 
     [Fact]
+    public void Kernel_registry_cache_events_are_not_value_writes()
+    {
+        // Registry/KCBCreate and Registry/KCBDelete are the kernel's own key-control-block
+        // traffic. Their header process id is whichever process triggered a cache
+        // operation, so substring matching turned them into writes "by the target": a
+        // session that only ran `echo hello` recorded 104 registryDeleteValue events
+        // against HKLM\SYSTEM\...\SafeBoot. They are not process activity and are ignored.
+        var mapper = new EtwEventMapper();
+
+        Assert.Null(mapper.Map(Record("Registry/KCBDelete", 0, 4380,
+            ("KeyName", @"\REGISTRY\MACHINE\SYSTEM\ControlSet001\Control\SafeBoot"),
+            ("KeyHandle", 0x5555UL),
+            ("ValueName", ""))));
+
+        Assert.Null(mapper.Map(Record("Registry/KCBCreate", 0, 4380,
+            ("KeyName", @"\REGISTRY\MACHINE\HARDWARE\DESCRIPTION"),
+            ("KeyHandle", 0x6666UL))));
+
+        // The kernel cache must not populate the handle table either: a later write must
+        // not inherit a key name it never opened.
+        mapper.Map(Record("Registry/KCBCreate", 0, 4380,
+            ("KeyName", @"\REGISTRY\MACHINE\SYSTEM\ControlSet001\Control\SafeBoot"),
+            ("KeyHandle", 0x7777UL)));
+
+        Assert.Null(mapper.Map(Record("Registry/SetValue", 0, 4380, ("KeyHandle", 0x7777UL), ("ValueName", "X"))));
+    }
+
+    [Fact]
+    public void User_level_registry_delete_is_still_mapped()
+    {
+        var mapper = new EtwEventMapper();
+
+        var raw = mapper.Map(Record("Registry/DeleteValue", 0, 4380,
+            ("KeyName", @"\REGISTRY\USER\S-1\Software\Microsoft\Windows\CurrentVersion\Run"),
+            ("ValueName", "Updater")));
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.RegistryDeleteValue, raw.Kind);
+    }
+
+    [Fact]
     public void Registry_close_forgets_the_handle()
     {
         var mapper = new EtwEventMapper();
@@ -331,7 +372,9 @@ public sealed class MonitoringTests
     public void Registry_set_includes_value_name()
     {
         var mapper = new EtwEventMapper();
-        var record = Record("RegistrySetValue", 5, 5000,
+        // Live records are named with a slash; the name used here was invented by an
+        // earlier test and never matched a real provider, which exact matching exposed.
+        var record = Record("Registry/SetValue", 5, 5000,
             ("KeyName", @"\REGISTRY\USER\S-1\Software\Microsoft\Windows\CurrentVersion\Run"),
             ("ValueName", "Updater"));
 

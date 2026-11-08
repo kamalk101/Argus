@@ -52,6 +52,7 @@ public sealed class RuleCatalog
             new ScheduledTaskRule(),
             new MassFileCreationRule(),
             new DestructiveRenameBurstRule(),
+            new CredentialStoreRule(),
             new RiskyPortRule(),
         ];
 

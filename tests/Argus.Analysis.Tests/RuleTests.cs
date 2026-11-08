@@ -505,6 +505,79 @@ public sealed class RuleTests
     }
 
     [Fact]
+    public void Reading_another_programs_credential_store_is_flagged()
+    {
+        var loginData = @"C:\Users\kamal\AppData\Local\Google\Chrome\User Data\Default\Login Data";
+        var key = @"C:\Users\kamal\.ssh\id_rsa";
+
+        var (snapshot, _) = Fx.Run([
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileRead, Fx.RootPid, loginData, 1),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, key, 2, effect: FileEffect.Opened),
+        ]);
+
+        var f008 = snapshot.Detections.Single(d => d.RuleId == "F-008");
+        Assert.Equal(2, f008.EventCount);
+
+        // Factors describe the latest finding, which is the key read.
+        Assert.Contains("store=SSH private key", f008.Factors);
+        Assert.Contains("operation=opened", f008.Factors);
+    }
+
+    [Fact]
+    public void A_browser_reading_its_own_login_data_is_not_flagged()
+    {
+        var loginData = @"C:\Users\kamal\AppData\Local\Google\Chrome\User Data\Default\Login Data";
+
+        var (snapshot, _) = Fx.Run([
+            Fx.ProcessStart(Fx.RootPid, 9999, "chrome.exe", @"C:\Program Files\Google\Chrome\Application\chrome.exe"),
+            Fx.FileOp(EventKind.FileRead, Fx.RootPid, loginData, 1),
+        ], rootImagePath: @"C:\Program Files\Google\Chrome\Application\chrome.exe");
+
+        Assert.DoesNotContain("F-008", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void The_ssh_client_reading_its_own_key_is_not_flagged()
+    {
+        var key = @"C:\Users\kamal\.ssh\id_ed25519";
+
+        var (snapshot, _) = Fx.Run([
+            Fx.ProcessStartWithImage(5150, Fx.RootPid, "ssh", "ssh git@example.com", 1),
+            Fx.FileOp(EventKind.FileRead, 5150, key, 2),
+        ]);
+
+        Assert.DoesNotContain("F-008", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Writing_a_credential_store_is_not_credential_access()
+    {
+        // Writes to these paths belong to the write rules; F-008 is about reading them.
+        var loginData = @"C:\Users\kamal\AppData\Local\Google\Chrome\User Data\Default\Login Data";
+
+        var (snapshot, _) = Fx.Run([
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, loginData, 1, effect: FileEffect.CreatedOrTruncated),
+            Fx.FileOp(EventKind.FileWrite, Fx.RootPid, loginData, 2, bytesOut: 512),
+        ]);
+
+        Assert.DoesNotContain("F-008", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Ordinary_files_are_not_credential_stores()
+    {
+        var (snapshot, _) = Fx.Run([
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileRead, Fx.RootPid, @"C:\argus-test\docs\report.docx", 1),
+            Fx.FileOp(EventKind.FileRead, Fx.RootPid, @"C:\Users\kamal\Documents\notes.txt", 2),
+        ]);
+
+        Assert.DoesNotContain("F-008", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
     public void Marker_rename_burst_across_directories_is_flagged()
     {
         var events = new List<Core.Events.RawEvent> { Fx.RootStart() };

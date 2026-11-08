@@ -450,6 +450,9 @@ public sealed class EtwEventMapper
         };
     }
 
+    private static bool NameIs(string name, string expected) =>
+        string.Equals(name, expected, StringComparison.OrdinalIgnoreCase);
+
     private RawEvent? MapRegistry(EtwRecord record, string name)
     {
         var handle = RegistryHandle(record);
@@ -459,28 +462,33 @@ public sealed class EtwEventMapper
         // events that follow carry only the handle. Measured live: every
         // Registry/SetValue arrived with an empty KeyName, so a write could never be
         // attributed to a key and the registry channel silently produced nothing.
-        if (name.Contains("Open", StringComparison.OrdinalIgnoreCase)
-            || name.Contains("Create", StringComparison.OrdinalIgnoreCase))
+        //
+        // The names are matched exactly rather than by substring. The kernel file/registry
+        // provider also emits its own object-cache traffic (Registry/KCBCreate,
+        // Registry/KCBDelete and so on) whose header process id is whichever process
+        // happened to trigger the cache operation. Matching "Delete" described those as
+        // value deletes: a session that only ran `echo hello` collected 104
+        // registryDeleteValue events against HKLM\SYSTEM\...\SafeBoot, and a third of the
+        // recorded stream was noise attributed to the target. Only the user-level
+        // operations are mapped; intentional writes still reach the rules through
+        // Registry/SetValue and Registry/DeleteValue.
+        if (NameIs(name, "Registry/Open") || NameIs(name, "Registry/Create"))
         {
             RememberRegistryKey(record.Pid, handle, reportedKey);
             return null;
         }
 
-        if (name.Contains("Close", StringComparison.OrdinalIgnoreCase))
+        if (NameIs(name, "Registry/Close"))
         {
             ForgetRegistryKey(record.Pid, handle);
             return null;
         }
 
-        EventKind? kind = null;
-        if (name.Contains("Delete", StringComparison.OrdinalIgnoreCase))
-        {
-            kind = EventKind.RegistryDeleteValue;
-        }
-        else if (name.Contains("Set", StringComparison.OrdinalIgnoreCase))
-        {
-            kind = EventKind.RegistrySetValue;
-        }
+        var kind = NameIs(name, "Registry/SetValue") || NameIs(name, "Registry/CreateValue")
+            ? EventKind.RegistrySetValue
+            : NameIs(name, "Registry/DeleteValue")
+                ? EventKind.RegistryDeleteValue
+                : (EventKind?)null;
 
         if (kind is null)
         {
