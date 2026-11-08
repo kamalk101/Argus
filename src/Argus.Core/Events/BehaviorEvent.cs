@@ -64,6 +64,9 @@ public sealed record BehaviorEvent
     /// <summary>Kind-specific extras as JSON; never the only place a fact lives.</summary>
     public string? Detail { get; init; }
 
+    /// <summary>Authenticode state of the launched image, when one was established (see <see cref="SignatureStatus"/>).</summary>
+    public SignatureStatus? Signature { get; init; }
+
     public required Observability Observability { get; init; }
 
     /// <summary>0..1 confidence in the observation itself, not in the intent.</summary>

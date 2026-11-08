@@ -53,6 +53,7 @@ public sealed class EventNormalizer
             FileEffect = raw.FileEffect,
             PreviousPath = raw.PreviousPath,
             Detail = raw.Detail,
+            Signature = raw.Signature,
             Observability = observability,
             Confidence = raw.Confidence ?? DefaultConfidence(observability),
             Source = source,

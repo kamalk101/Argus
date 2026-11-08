@@ -33,6 +33,7 @@ public sealed class RuleCatalog
         IEventRule[] eventRules =
         [
             new ShellSpawnRule(),
+            new InterpreterFromNonShellRule(),
             new EncodedInterpreterRule(),
             new SensitiveWriteRule(
                 new RuleMetadata(
@@ -65,6 +66,8 @@ public sealed class RuleCatalog
             new UserWritableLaunchRule(),
             new RepeatedFlagsRule(active),
             new RecoveryTamperingRule(),
+            new UnsignedImageRule(),
+            new CrossProcessLaunchRule(),
             new BarePublicIpRule(),
             new RiskyPortRule(),
         ];

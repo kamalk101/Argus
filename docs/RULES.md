@@ -2,7 +2,7 @@
 
 Generated view: `dotnet run --project src/Argus.Cli -- rules` (add `--json` for machine output).
 
-This is **18 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
+This is **21 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
 reason, counterfactual and at least two fixtures each.
 
 ## Shipped rules
@@ -21,11 +21,14 @@ reason, counterfactual and at least two fixtures each.
 | N-002 | Periodic callbacks to one endpoint | 60 | network | T1071 | aggregated (600 s) |
 | N-003 | Large outbound transfer to one address | 65 | network | T1041 | aggregated (60 s) |
 | N-004 | Connection to a bare public address | 35 | network | T1095 | per-event |
+| P-001 | Shell or interpreter spawned by a non-shell parent | 60 | process | T1059 | per-event |
 | P-002 | Unexpected command interpreter | 85 | process | T1059 | per-event |
 | P-003 | Interpreter with encoded or remote payload | 75 | process | T1218, T1027 | per-event |
 | P-004 | Executable launched from a user-writable directory | 45 | process | T1204 | per-event |
+| P-005 | Unsigned image launched in the monitored tree | 30 | process | T1553 | per-event |
 | P-006 | Repeated launches of one program with different switches | 25 | process | T1082 | aggregated (600 s) |
 | P-007 | Shadow copy or recovery tampering | 80 | process | T1490 | per-event |
+| P-008 | Process in the application's directory with no observed creator | 65 | process | T1055 | per-event |
 | X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated |
 
 **How registry writes are attributed (measured).** The classic registry keyword names a key
@@ -40,6 +43,33 @@ enables it alongside the classic keyword and joins the two, which is how
 object pointer the event is marked `Inferred`, not `Direct`, and an entry is dropped as soon as
 the kernel retires the object — those pointers are reused, and the same value was measured
 belonging to two unrelated keys.
+
+**How P-005 knows a binary is unsigned (measured, and three-way on purpose).**
+`RawEvent.Signature` carries a `SignatureStatus` of `Valid`, `Invalid` or nothing. The monitor
+builds the Authenticode chain explicitly (`X509Chain.Build`, revocation lookups off so a capture
+does not stall on the network) because `X509Certificate.CreateFromSignedFile` only reports that a
+certificate is *attached*: a self-signed binary passes that check. No value at all means the sensor
+never established a trust result — a protected process, or a path that vanished before it was read —
+and the rule refuses to read that as "unsigned". Most unsigned utilities on a workstation are
+harmless, which is why P-005 is the quietest process signal at severity 30 and adds provenance, not
+intent.
+
+**How P-008 infers cross-process creation (it is an inference, and the report says so).**
+Nothing in the enabled kernel keywords reports `CreateRemoteThread` or an APC injection, so there is
+no injection event to read; the agent's own limitations already state that injection indicators are
+inferred. P-008 therefore reads the scope tracker: a process whose image sits under the root
+application's own directory but for which no parent link was ever observed is marked
+`Unconfirmed` (`image-under-root-directory`), and for a single-tenant application directory that is
+a contradiction — it is the application's own code, yet the application was never seen starting it.
+A shared directory (`System32`, `Program Files`) proves nothing by location and is excluded, and
+the finding carries `basis=inferred-from-process-table` so the evidence panel cannot present it as
+an observation.
+
+**P-001 and P-002 are disjoint by construction.** Both concern an interpreter with no human typing
+its arguments. Where a creator was observed, P-002 names it and reports at severity 85; P-001 fires
+only when no parent record exists at all and the interpreter is in the tree by location alone,
+reporting at 60. The first draft of P-001 used the same predicate as P-002 and every shell fixture
+produced two findings for one launch — the disjointness is the rule, not a filter applied afterwards.
 
 Two things the stream still contains and the rules do not use: the kernel's own key-cache
 traffic (`Registry/KCBCreate`, `Registry/KCBDelete`), whose header pid is whichever process

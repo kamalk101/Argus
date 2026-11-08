@@ -1,5 +1,7 @@
 namespace Argus.Core.Monitoring;
 
+using Argus.Core.Events;
+
 /// <summary>
 /// A single ETW record in a platform-neutral shape. The Windows collector turns
 /// <c>TraceEvent</c> into this record; the mapper below is pure data
@@ -35,4 +37,5 @@ public sealed record ProcessMetadata(
     string? ImagePath = null,
     string? CommandLine = null,
     int? ParentPid = null,
-    string? IntegrityLevel = null);
+    string? IntegrityLevel = null,
+    SignatureStatus Signature = SignatureStatus.Unknown);

@@ -98,8 +98,7 @@ public sealed class EtwEventMapper
     }
 
     private RawEvent? MapProcess(EtwRecord record, ProcessMetadata? metadata, string name)
-    {
-        var isStart = name.Contains("Start", StringComparison.OrdinalIgnoreCase)
+    {        var isStart = name.Contains("Start", StringComparison.OrdinalIgnoreCase)
             || record.EventId is 1 or 3;
         var isStop = name.Contains("Stop", StringComparison.OrdinalIgnoreCase)
             || record.EventId is 2 or 4;
@@ -142,11 +141,18 @@ public sealed class EtwEventMapper
             CommandLine = commandLine,
             Observability = string.IsNullOrEmpty(imagePath) ? Observability.Partial : Observability.Direct,
             Source = EventSourceKind.Etw,
+            Signature = SignatureOf(metadata),
         };
     }
 
-    private RawEvent? MapFile(EtwRecord record, string name)
-    {
+    /// <summary>
+    /// Absence of a metadata record means the sensor never asked about this image, which is not the
+    /// same as asking and finding nothing: report null (no evidence) rather than a status.
+    /// </summary>
+    private static SignatureStatus? SignatureOf(ProcessMetadata? metadata) =>
+        metadata is null || metadata.Signature == SignatureStatus.Unknown ? null : metadata.Signature;
+
+    private RawEvent? MapFile(EtwRecord record, string name)    {
         var kind = KindOfFileEvent(name);
         if (kind is null)
         {

@@ -19,7 +19,7 @@ internal static class Fx
     public static SensitivePathCatalog Catalog { get; } =
         SensitivePathCatalog.Default(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
-    public static RawEvent ProcessStart(int pid, int? parentPid, string image, string? path = null, string? commandLine = null, double seconds = 0) => new()
+    public static RawEvent ProcessStart(int pid, int? parentPid, string image, string? path = null, string? commandLine = null, double seconds = 0, SignatureStatus? signature = null) => new()
     {
         Ts = T0.AddSeconds(seconds),
         Kind = EventKind.ProcessStart,
@@ -28,6 +28,7 @@ internal static class Fx
         ImageName = image,
         ImagePath = path,
         CommandLine = commandLine,
+        Signature = signature,
         Source = EventSourceKind.Replay,
     };
 

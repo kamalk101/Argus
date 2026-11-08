@@ -55,6 +55,14 @@ public sealed record RawEvent
 
     public string? Detail { get; init; }
 
+    /// <summary>
+    /// Authenticode state of the image, when the sensor could establish it. Present with
+    /// <see cref="SignatureStatus.Invalid"/> only when a publisher signature was looked for and not
+    /// found or not trusted; <see cref="SignatureStatus.Unknown"/> is the absence of a result and
+    /// must not be read as "unsigned".
+    /// </summary>
+    public SignatureStatus? Signature { get; init; }
+
     public Observability? Observability { get; init; }
 
     public double? Confidence { get; init; }
