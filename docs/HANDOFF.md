@@ -86,9 +86,9 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **123 tests** (78 core, 34 analysis, 11 storage), **16/16** asserted
-replay scenarios, 7 shipped rules (`F-001`, `F-005`, `F-007`, `N-001`, `P-002`, `P-003`,
-`X-001`).
+Current automated counts: **140 tests** (82 core, 47 analysis, 11 storage), **22/22** asserted
+replay scenarios, 10 shipped rules (`F-001`, `F-002`, `F-003`, `F-004`, `F-005`, `F-007`,
+`N-001`, `P-002`, `P-003`, `X-001`).
 
 ## 4. Architecture and data flow
 
@@ -437,6 +437,24 @@ be replayed on Linux with the same `Argus.Cli replay` command.
 - A child `powershell.exe` writes its own `__psscriptpolicytest_*.ps1` into `%TEMP%` on every
   invocation, which `F-007` correctly but noisily reports. Expect it in interpreter-heavy
   trees and do not "fix" it by suppressing script drops.
+- **Process image names are not always `x.exe`.** Live ETW reported `ImageFileName="schtasks"`
+  and `"PING.EXE"` in the same session, and one `schtasks /create` arrived with **no command
+  line at all**. Match image names through `ProcessNames.IsOneOf` (accepts both spellings), and
+  do not assume `CommandLine` is populated for command-line rules; a missing argument means no
+  detection, not a negative result.
+- **`Registry/SetValue` has an empty `KeyName`.** Like `FileIO` writes, the write events carry
+  only a handle; the key name comes from the earlier `Registry/Open`/`Registry/Create`. The mapper
+  keeps a `(pid, KeyHandle) → KeyName` cache. A write whose open happened before the session
+  started cannot be attributed and is dropped — do not "fix" that by guessing a key.
+- **A monitored app's registry write may be attributed to a service.** `schtasks /create` was
+  observed as registry writes on pid 4 (System) and the Task Scheduler service, both out of
+  scope. Only the tool launch (`schtasks.exe` + arguments) is in-scope evidence for those; that
+  is why `F-003` is a process-channel rule.
+- **Capture starts after the target.** `Process.Start` happens before the ETW session is enabled
+  (the collector needs the root pid), so roughly the first 150 ms of a session is unobserved.
+  The monitor measures it and emits a `capture-start-latency` gap; a live probe whose first
+  actions were `reg add` and `schtasks /create` lost exactly those. Never read a short session as
+  complete.
 - If you run tests on Linux, use `~/.dotnet/dotnet` if `dotnet` is not on `PATH`.
 
 ## 11. Reporting discipline
@@ -490,11 +508,66 @@ Before the fix the same probe produced `F-005 "write to System32"` for `PING.EXE
 precision was kept in the other direction too: gating on `FileWrite` alone would have missed
 `stage3.exe`, because a same-volume copy emits no writes (see §10).
 
-Tests: **123** (78 core, 34 analysis, 11 storage), fixtures **16/16** (new:
-`15-system-open-benign` proves an open is not a write, `16-dropped-then-written` proves a
-copy-style drop with no write event is still found exactly once).
+Defence against the drop case is proven twice: the unit test `Create_always_in_system32_is_a_system_write`
+and fixture `16-dropped-then-written`.
 
-### 12.2 Next in Phase 3
+### 12.2 Persistence rules: F-002, F-003, F-004 — done
+
+Three catalogue rules, each with a firing fixture, a quiet fixture and unit tests:
+
+| Rule | Trigger | Quiet case proven |
+|---|---|---|
+| `F-002` Run/RunOnce write (75, registry) | a `RegistrySetValue`/`DeleteValue` under a `CurrentVersion\{Run,RunOnce,RunServices,RunOnceEx}` segment, **or** a `reg.exe add|import` naming one | `Explorer\RunMRU` (starts with "Run", never executed), unrelated Explorer values, `reg query` |
+| `F-003` Scheduled task created (70, process) | `schtasks.exe` with a create verb, or `at.exe` (legacy scheduler) | `schtasks /query`, `/end`, `/delete` |
+| `F-004` Mass file creation (55, file) | ≥ 200 content-changing creates per 60 s, counted from the correlation index, reported once per threshold crossing (200, 400, …) | 150 creates in 30 s, and bursts of writes or opens |
+
+Thresholds are constants in the rule classes; `rules.json` binding promised by `PLAN.md` §6.3 is
+still open.
+
+Measured live on the VM with a benign probe (a batch file under a monitored `cmd.exe`: wait, `reg
+add` + `reg delete` of `HKCU\…\Run\ArgusProbeF002`, `schtasks /create` then `/delete` of
+`ArgusProbeF003`, 250 files into `%TEMP%`):
+
+```text
+695 events: 9 processStart, 395 fileCreate, 250 fileWrite, 29 fileRead, 3 registrySetValue,
+1 monitorGap
+replay: Suspicious 48.5 (3 channels, corroboration 1.16)
+  F-002  reg.exe started with arguments writing CurrentVersion\Run
+  F-003  schtasks /create registered "ArgusProbeF003"
+  F-004  200 files created in 60 s (640/s)
+```
+
+The probe creates and deletes its own artefacts; nothing was left behind.
+
+### 12.3 Two sensor bugs the live probe exposed
+
+Neither was visible from unit tests or replay, which is the whole reason the rule says to run
+it on Windows.
+
+1. **Image names arrive without the extension.** Live ETW reported `ImageFileName="schtasks"`
+   for one launch and `"PING.EXE"` for another. Every rule compared the literal name against a
+   set of `x.exe` names, so an extension-less child silently matched nothing — including
+   `P-002`/`P-003` on a real shell. `ProcessNames.IsOneOf` now accepts both spellings and
+   `ProcessNames.Display` renders the extension for reason text. Tests:
+   `Task_registration_is_recognised_without_the_exe_extension`,
+   `Unexpected_shell_is_recognised_without_the_exe_extension`.
+2. **Registry writes were mapped to nothing.** All registry writes in every live capture so far
+   produced zero events (`registryEvents: 0`). The records do arrive, but `Registry/SetValue`
+   carries an **empty `KeyName`** — only a `KeyHandle`. The old mapper required `KeyName` and
+   dropped the write. The mapper now caches `(pid, KeyHandle) → KeyName` from
+   `Registry/Open`/`Registry/Create` (and forgets it on `Registry/Close`), so a write is
+   attributed to the key that handle was opened on, marked `Observability.Inferred`. Live
+   result: `registrySetValue` went from 0 to 3, and `--self-test` now reports
+   `registryEvents: 2`. A write whose handle was opened before capture began is still
+   unattributable and stays out of the stream (§10).
+
+Also found and reported (not yet fixed): the target is launched **before** the ETW session is
+enabled, so the first ~150 ms of every session is unobserved. It is now measured and surfaced as
+`capture-start-latency` (live: 142–156 ms). The real fix is to enable capture first — the root pid
+is only needed for scope, so this needs a late root attach — and it is the next infrastructure
+item.
+
+### 12.4 Next in Phase 3
 
 The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
 aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use

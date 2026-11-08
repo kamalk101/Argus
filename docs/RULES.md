@@ -2,8 +2,8 @@
 
 Generated view: `dotnet run --project src/Argus.Cli -- rules` (add `--json` for machine output).
 
-This is the **Phase 1 starter set** — the rules needed to prove the pipeline end to end.
-Phase 3 extends it to the ~22-rule catalogue in `PLAN.md` §6.3 using the same contract.
+This is **10 of the 22 rules** in `PLAN.md` §6.3. The rest land in the same contract — one rule,
+reason, counterfactual and at least two fixtures each.
 
 ## Shipped rules
 
@@ -12,10 +12,35 @@ Phase 3 extends it to the ~22-rule catalogue in `PLAN.md` §6.3 using the same c
 | P-002 | Unexpected command interpreter | 85 | process | T1059 | per-event |
 | P-003 | Interpreter with encoded or remote payload | 75 | process | T1218, T1027 | per-event |
 | F-001 | Write to an autostart location | 80 | file | T1547.001 | per-event |
+| F-002 | Write to a Run/RunOnce autostart key | 75 | registry | T1547.001 | per-event |
+| F-003 | Scheduled task created | 70 | process | T1053.005 | per-event |
+| F-004 | Mass file creation | 55 | file | T1105, T1486 | aggregated (60 s) |
 | F-005 | Write to a system location | 65 | file | T1543, T1574 | per-event |
 | F-007 | Executable payload dropped in a writable location | 50 | file | T1105 | per-event |
 | N-001 | Connection to a risky service port | 45 | network | T1021 | per-event |
 | X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated (60 s) |
+
+A rule's channel names what the finding is **about**, not which sensor produced it. `F-002` is a
+registry autostart write whether it was seen as a `RegistrySetValue` or as
+`reg.exe add …\CurrentVersion\Run`: the second form says so in its factors
+(`evidence=command-line`) and never claims the value was observed being written. `F-003` is a
+scheduled-task registration, and it is a process-channel rule because the task file itself is
+written by the Task Scheduler service, which is out of scope — only the tool launch is in-scope
+evidence.
+
+### Thresholds and volume
+
+`F-004` counts content-changing creates in a 60 s window from the correlation index and fires once
+per threshold crossing (200, 400, 600 …), so one detection represents one escalation step instead
+of 200 duplicate findings. Bursts of writes to existing files and bursts of opens do not count —
+a compiler or a scanner must stay quiet. Thresholds are constants in the rule class today;
+`rules.json` binding is still open.
+
+### Not a write
+
+`F-002` excludes `Explorer\RunMRU`, which begins with "Run" but is the Run-dialog history Windows
+never executes; the match is on whole key segments. `F-004` excludes opens for the same reason it
+excludes writes: nothing appeared.
 
 ### Why these severities
 
@@ -24,7 +49,7 @@ Phase 3 extends it to the ~22-rule catalogue in `PLAN.md` §6.3 using the same c
   connection). They still need corroboration to reach the *malicious* band unless a
   critical rule fires.
 - **65 / 75** — strong but commonly dual-use (installers, updaters, admins).
-- **45 / 50** — signals worth surfacing, insufficient alone.
+- **45 / 50 / 55** — signals worth surfacing, insufficient alone.
 
 ## What counts as a file write
 

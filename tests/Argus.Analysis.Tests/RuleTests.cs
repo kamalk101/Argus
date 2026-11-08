@@ -371,4 +371,183 @@ public sealed class RuleTests
         Assert.True(snapshot.Counters.EventsOutsideScope > 0);
         Assert.Equal(1, snapshot.Counters.EventsInScope);
     }
+
+    private const string RunKey =
+        @"\REGISTRY\MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+
+    [Fact]
+    public void Run_key_write_is_flagged()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.RegistryOp(Fx.RootPid, RunKey + @"\Updater", 2),
+        ]);
+
+        var f002 = snapshot.Detections.Single(d => d.RuleId == "F-002");
+        Assert.Contains("evidence=registry-write", f002.Factors);
+        Assert.Contains("updater", f002.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Run_once_delete_is_flagged()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.RegistryOp(Fx.RootPid, RunKey + "Once\\Payload", 2, EventKind.RegistryDeleteValue),
+        ]);
+
+        Assert.Contains("F-002", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Run_mru_is_not_an_autostart_key()
+    {
+        // Explorer\RunMRU records what the user typed into the Run dialog. It begins with
+        // "Run" but Windows never executes it, so matching on a prefix would be a false
+        // positive on every Start-menu search.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.RegistryOp(Fx.RootPid, @"\REGISTRY\CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RunMRU\a", 2),
+            Fx.RegistryOp(Fx.RootPid, @"\REGISTRY\CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_TrackDocs", 3),
+        ]);
+
+        Assert.DoesNotContain("F-002", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Reg_add_of_a_run_value_is_flagged_from_the_command_line()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.ProcessStart(5120, Fx.RootPid, "reg.exe", @"C:\Windows\System32\reg.exe",
+                @"reg add ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v Updater /d C:\argus-test\stage2.exe", 2),
+        ]);
+
+        var f002 = snapshot.Detections.Single(d => d.RuleId == "F-002");
+        Assert.Contains("evidence=command-line", f002.Factors);
+        Assert.Contains("reg.exe", f002.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Reg_query_of_a_run_value_is_not_flagged()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.ProcessStart(5120, Fx.RootPid, "reg.exe", @"C:\Windows\System32\reg.exe",
+                @"reg query ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run""", 2),
+        ]);
+
+        Assert.DoesNotContain("F-002", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Scheduled_task_registration_is_flagged()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.ProcessStart(5130, Fx.RootPid, "schtasks.exe", @"C:\Windows\System32\schtasks.exe",
+                @"schtasks /create /tn ""Argus Updater"" /tr C:\argus-test\stage2.exe /sc onlogon", 2),
+        ]);
+
+        var f003 = snapshot.Detections.Single(d => d.RuleId == "F-003");
+        Assert.Contains("Argus Updater", f003.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Scheduling_tool_administration_is_not_a_task_registration()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.ProcessStart(5130, Fx.RootPid, "schtasks.exe", @"C:\Windows\System32\schtasks.exe",
+                @"schtasks /query /tn ""Argus Updater""", 2),
+            Fx.ProcessStart(5131, Fx.RootPid, "schtasks.exe", @"C:\Windows\System32\schtasks.exe",
+                @"schtasks /delete /tn ""Argus Updater"" /f", 3),
+            Fx.ProcessStart(5132, Fx.RootPid, "schtasks.exe", @"C:\Windows\System32\schtasks.exe",
+                @"schtasks /end /tn ""Argus Updater""", 4),
+        ]);
+
+        Assert.DoesNotContain("F-003", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Task_registration_is_recognised_without_the_exe_extension()
+    {
+        // Live ETW reported ImageFileName="schtasks" for schtasks /query; matching only on
+        // "schtasks.exe" silently missed every such child.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.ProcessStartWithImage(5140, Fx.RootPid, "schtasks",
+                @"schtasks /create /tn ArgusProbe /tr C:\argus-test\stage2.exe /sc once /st 23:59", 2),
+        ]);
+
+        Assert.Contains("F-003", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Unexpected_shell_is_recognised_without_the_exe_extension()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.ProcessStartWithImage(5150, Fx.RootPid, "powershell", "powershell -nop -w hidden -enc SQBFAFgA", 2),
+        ]);
+
+        Assert.Contains("P-002", Fx.RulesOf(snapshot));
+        Assert.Contains("P-003", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Mass_file_creation_is_flagged_once_per_threshold()
+    {
+        var events = new List<Core.Events.RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.MassCreates(250, seconds: 1, span: 30));
+
+        var (snapshot, _) = Fx.Run(events, risk: null);
+
+        var f004 = snapshot.Detections.Single(d => d.RuleId == "F-004");
+        Assert.Equal(1, f004.EventCount);
+        Assert.Contains("creates_in_window=200", f004.Factors);
+    }
+
+    [Fact]
+    public void Write_burst_is_not_mass_file_creation()
+    {
+        // A build tool rewriting existing objects is volume, not files appearing.
+        var events = new List<Core.Events.RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.MassCreates(250, seconds: 1, span: 30, kind: EventKind.FileWrite));
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("F-004", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Creation_below_the_threshold_is_not_flagged()
+    {
+        var events = new List<Core.Events.RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.MassCreates(199, seconds: 1, span: 30));
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("F-004", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Opens_do_not_count_as_file_creation()
+    {
+        var events = new List<Core.Events.RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.MassCreates(250, seconds: 1, span: 30, effect: FileEffect.Opened));
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("F-004", Fx.RulesOf(snapshot));
+    }
 }

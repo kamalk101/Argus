@@ -29,7 +29,7 @@ public sealed class ShellSpawnRule : IEventRule
         }
 
         var child = ProcessNames.Normalize(current.ImageName ?? current.ImagePath);
-        if (string.IsNullOrEmpty(child) || !ProcessNames.Interpreters.Contains(child))
+        if (!ProcessNames.IsOneOf(child, ProcessNames.Interpreters))
         {
             yield break;
         }
@@ -47,7 +47,7 @@ public sealed class ShellSpawnRule : IEventRule
         }
 
         var parentName = ProcessNames.Normalize(parent.ImageName ?? parent.ImagePath);
-        if (string.IsNullOrEmpty(parentName) || ProcessNames.ExpectedInterpreterParents.Contains(parentName))
+        if (string.IsNullOrEmpty(parentName) || ProcessNames.IsOneOf(parentName, ProcessNames.ExpectedInterpreterParents))
         {
             yield break;
         }
@@ -59,8 +59,8 @@ public sealed class ShellSpawnRule : IEventRule
 
         var arguments = ShortArguments(current.CommandLine);
         var reason = arguments.Length > 0
-            ? $"{parentName} (PID {parent.Pid}), which is not a shell, terminal, IDE, installer or service host, spawned {child} (PID {current.Pid}) with arguments \"{arguments}\"."
-            : $"{parentName} (PID {parent.Pid}), which is not a shell, terminal, IDE, installer or service host, spawned {child} (PID {current.Pid}).";
+            ? $"{ProcessNames.Display(parentName)} (PID {parent.Pid}), which is not a shell, terminal, IDE, installer or service host, spawned {ProcessNames.Display(child)} (PID {current.Pid}) with arguments \"{arguments}\"."
+            : $"{ProcessNames.Display(parentName)} (PID {parent.Pid}), which is not a shell, terminal, IDE, installer or service host, spawned {ProcessNames.Display(child)} (PID {current.Pid}).";
 
         yield return new RuleFinding
         {

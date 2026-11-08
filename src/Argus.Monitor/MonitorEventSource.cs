@@ -33,6 +33,14 @@ public sealed class MonitorEventSource : IAsyncDisposable
     private int _startedFlag;
     private int _stoppedFlag;
 
+    /// <summary>
+    /// How long after the target started the first event may arrive before the silence
+    /// counts as a monitoring gap. ETW needs a moment to begin delivering, and the target
+    /// is launched first, so anything it does in that moment is unobserved and must be
+    /// reported rather than left to look like "nothing happened".
+    /// </summary>
+    public static readonly TimeSpan CaptureStartTolerance = TimeSpan.FromMilliseconds(100);
+
     public MonitorEventSource(MonitorOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -99,6 +107,10 @@ public sealed class MonitorEventSource : IAsyncDisposable
         if (!_etw.TryStart(out var kernelError, out var dnsError))
         {
             EmitGap("etw-unavailable", kernelError ?? "The kernel provider could not be enabled.");
+        }
+        else if (_options.RootStartedUtc is { } launchTime)
+        {
+            ReportCaptureStart(launchTime);
         }
 
         if (dnsError is not null)
@@ -176,6 +188,34 @@ public sealed class MonitorEventSource : IAsyncDisposable
         }
 
         Write(routed);
+    }
+
+    /// <summary>
+    /// Records the window between the target starting and ETW being enabled.
+    ///
+    /// The target is launched first and the session is enabled afterwards (the collector
+    /// needs the root pid), so whatever the application does in that window cannot be
+    /// observed and ETW does not replay it. Measured live: a probe whose first action was
+    /// <c>reg add</c> lost it, while the rest of the batch was captured. Reporting the
+    /// measured window keeps the loss visible instead of letting a partial session look
+    /// complete.
+    ///
+    /// The real fix (enabling capture before the launch) is recorded in the handoff.
+    /// </summary>
+    private void ReportCaptureStart(DateTimeOffset launchTime)
+    {
+        var latency = DateTimeOffset.UtcNow - launchTime;
+        if (latency <= CaptureStartTolerance)
+        {
+            return;
+        }
+
+        EmitGap(
+            "capture-start-latency",
+            string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"ETW capture was enabled {latency.TotalMilliseconds:0} ms after the monitored application started; anything it did in that window was not observed."),
+            launchTime);
     }
 
     private RawEvent? Route(RawEvent rawEvent)
@@ -281,11 +321,13 @@ public sealed class MonitorEventSource : IAsyncDisposable
 
     private bool IsInScope(int pid) => _scope.ClassifyPid(pid).InScope;
 
-    private void EmitGap(string reason, string message)
+    private void EmitGap(string reason, string message, DateTimeOffset? timestamp = null)
     {
         var gap = new RawEvent
         {
-            Ts = DateTimeOffset.UtcNow,
+            // The gap starts when observation was missing, not when it was noticed, so the
+            // stream stays in time order for the correlation index.
+            Ts = timestamp ?? DateTimeOffset.UtcNow,
             Kind = EventKind.MonitorGap,
             Pid = 0,
             Target = reason,

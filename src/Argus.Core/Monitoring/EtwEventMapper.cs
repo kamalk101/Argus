@@ -18,6 +18,9 @@ public sealed class EtwEventMapper
 
     private readonly Func<string, string> _resolvePath;
     private readonly Dictionary<ulong, string> _fileKeys = [];
+    private readonly Dictionary<(int Pid, ulong Handle), string> _registryKeys = [];
+
+    private const int MaxRegistryKeys = 20_000;
     private readonly Queue<ulong> _fileKeyOrder = [];
 
     public EtwEventMapper(Func<string, string>? resolvePath = null)
@@ -382,6 +385,26 @@ public sealed class EtwEventMapper
 
     private RawEvent? MapRegistry(EtwRecord record, string name)
     {
+        var handle = RegistryHandle(record);
+        var reportedKey = FirstString(record, "KeyName", "Key", "Path");
+
+        // Registry/Open and Registry/Create carry the key name and its handle; the write
+        // events that follow carry only the handle. Measured live: every
+        // Registry/SetValue arrived with an empty KeyName, so a write could never be
+        // attributed to a key and the registry channel silently produced nothing.
+        if (name.Contains("Open", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Create", StringComparison.OrdinalIgnoreCase))
+        {
+            RememberRegistryKey(record.Pid, handle, reportedKey);
+            return null;
+        }
+
+        if (name.Contains("Close", StringComparison.OrdinalIgnoreCase))
+        {
+            ForgetRegistryKey(record.Pid, handle);
+            return null;
+        }
+
         EventKind? kind = null;
         if (name.Contains("Delete", StringComparison.OrdinalIgnoreCase))
         {
@@ -397,9 +420,15 @@ public sealed class EtwEventMapper
             return null;
         }
 
-        var key = FirstString(record, "KeyName", "Key", "Path");
+        var key = string.IsNullOrEmpty(reportedKey)
+            ? CachedRegistryKey(record.Pid, handle)
+            : reportedKey;
+
         if (string.IsNullOrEmpty(key))
         {
+            // A write whose handle was opened before capture began cannot be attributed.
+            // It stays out of the stream rather than being guessed at; the process-level
+            // rules still see the tool that performed it.
             return null;
         }
 
@@ -416,10 +445,54 @@ public sealed class EtwEventMapper
             Detail = string.IsNullOrEmpty(valueName)
                 ? null
                 : JsonSerializer.Serialize(new Dictionary<string, string?> { ["valueName"] = valueName }),
-            Observability = Observability.Direct,
+            Observability = reportedKey is null ? Observability.Inferred : Observability.Direct,
             Source = EventSourceKind.Etw,
         };
     }
+
+    private static ulong? RegistryHandle(EtwRecord record)
+    {
+        var value = FirstValue(record, "KeyHandle", "Handle");
+        if (value is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return Convert.ToUInt64(value, CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException)
+        {
+            return null;
+        }
+    }
+
+    private void RememberRegistryKey(int pid, ulong? handle, string? key)
+    {
+        if (handle is not { } keyHandle || string.IsNullOrEmpty(key))
+        {
+            return;
+        }
+
+        _registryKeys[(pid, keyHandle)] = key;
+
+        if (_registryKeys.Count > MaxRegistryKeys)
+        {
+            _registryKeys.Clear();
+        }
+    }
+
+    private void ForgetRegistryKey(int pid, ulong? handle)
+    {
+        if (handle is { } keyHandle)
+        {
+            _registryKeys.Remove((pid, keyHandle));
+        }
+    }
+
+    private string? CachedRegistryKey(int pid, ulong? handle) =>
+        handle is { } keyHandle && _registryKeys.TryGetValue((pid, keyHandle), out var key) ? key : null;
 
     private static RawEvent? MapDns(EtwRecord record)
     {

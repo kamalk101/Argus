@@ -224,6 +224,74 @@ public sealed class MonitoringTests
     }
 
     [Fact]
+    public void Registry_write_resolves_the_key_from_the_open_handle()
+    {
+        // Live measurement: Registry/SetValue arrives with an empty KeyName and only a
+        // KeyHandle, so a write could not be attributed to a key and the registry channel
+        // produced nothing at all. The key name comes from the preceding Registry/Open.
+        var mapper = new EtwEventMapper();
+        const string Key = @"\REGISTRY\USER\S-1\Software\Microsoft\Windows\CurrentVersion\Run";
+
+        Assert.Null(mapper.Map(Record("Registry/Open", 0, 4380, ("KeyName", Key), ("KeyHandle", 0x1A2BUL), ("ValueName", ""))));
+
+        var raw = mapper.Map(Record("Registry/SetValue", 0, 4380,
+            ("KeyName", string.Empty),
+            ("KeyHandle", 0x1A2BUL),
+            ("ValueName", "ArgusProbe")));
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.RegistrySetValue, raw.Kind);
+        Assert.Equal(Key + @"\ArgusProbe", raw.Target);
+        Assert.Equal(4380, raw.Pid);
+
+        // The key name was not in this record, so the attribution is inferred from the
+        // handle table and must not be presented as a directly observed path.
+        Assert.Equal(Observability.Inferred, raw.Observability);
+    }
+
+    [Fact]
+    public void Registry_write_without_a_known_handle_is_ignored()
+    {
+        // Opening the key happened before capture started: the write cannot be attributed
+        // to a key, and guessing one would be worse than dropping it.
+        var mapper = new EtwEventMapper();
+
+        var raw = mapper.Map(Record("Registry/SetValue", 0, 4380,
+            ("KeyName", string.Empty),
+            ("KeyHandle", 0x9999UL),
+            ("ValueName", "X")));
+
+        Assert.Null(raw);
+    }
+
+    [Fact]
+    public void Registry_close_forgets_the_handle()
+    {
+        var mapper = new EtwEventMapper();
+
+        mapper.Map(Record("Registry/Open", 0, 4380, ("KeyName", @"\REGISTRY\MACHINE\X"), ("KeyHandle", 0x10UL)));
+        mapper.Map(Record("Registry/Close", 0, 4380, ("KeyHandle", 0x10UL)));
+
+        var raw = mapper.Map(Record("Registry/SetValue", 0, 4380, ("KeyHandle", 0x10UL), ("ValueName", "Y")));
+
+        Assert.Null(raw);
+    }
+
+    [Fact]
+    public void Registry_delete_resolves_the_key_from_the_open_handle()
+    {
+        var mapper = new EtwEventMapper();
+
+        mapper.Map(Record("Registry/Open", 0, 4380, ("KeyName", @"\REGISTRY\MACHINE\X"), ("KeyHandle", 0x20UL)));
+
+        var raw = mapper.Map(Record("Registry/DeleteValue", 0, 4380, ("KeyHandle", 0x20UL), ("ValueName", "Old")));
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.RegistryDeleteValue, raw.Kind);
+        Assert.Equal(@"\REGISTRY\MACHINE\X\Old", raw.Target);
+    }
+
+    [Fact]
     public void Registry_set_includes_value_name()
     {
         var mapper = new EtwEventMapper();

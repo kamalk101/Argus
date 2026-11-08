@@ -29,7 +29,7 @@ public sealed partial class EncodedInterpreterRule : IEventRule
         }
 
         var image = ProcessNames.Normalize(current.ImageName ?? current.ImagePath);
-        if (!ProcessNames.Interpreters.Contains(image))
+        if (!ProcessNames.IsOneOf(image, ProcessNames.Interpreters))
         {
             yield break;
         }
@@ -49,7 +49,7 @@ public sealed partial class EncodedInterpreterRule : IEventRule
         yield return new RuleFinding
         {
             Rule = Metadata,
-            Reason = $"{image} (PID {current.Pid}) was started with the argument pattern \"{match.Value}\", which is used to run hidden or remotely supplied code.",
+            Reason = $"{ProcessNames.Display(image)} (PID {current.Pid}) was started with the argument pattern \"{match.Value}\", which is used to run hidden or remotely supplied code.",
             Counterfactual = "Would not fire for an ordinary invocation without encoded, URL or script-host arguments.",
             Factors =
             [

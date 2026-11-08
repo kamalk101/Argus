@@ -138,7 +138,10 @@ public sealed class SessionManager : IAsyncDisposable
                 {
                     RootPid = process.Id,
                     RootImagePath = targetPath,
-                    RootStartedUtc = started,
+
+                    // The OS launch time, not the session-creation time: the window between
+                    // the two is exactly the blind spot the capture-start gap measures.
+                    RootStartedUtc = LaunchTimeOf(process) ?? started,
                     Catalog = SensitivePathCatalog.Default(),
                     SessionName = _options.SessionName,
                 });
@@ -260,6 +263,19 @@ public sealed class SessionManager : IAsyncDisposable
                 // The target exited and its pipe was closed.
             }
         });
+    }
+
+    /// <summary>Launch time as Windows records it; null when the process already exited.</summary>
+    private static DateTimeOffset? LaunchTimeOf(Process process)
+    {
+        try
+        {
+            return process.StartTime.ToUniversalTime();
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
     }
 
     private static string? TryHash(string path)

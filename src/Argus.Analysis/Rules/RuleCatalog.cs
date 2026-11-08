@@ -48,6 +48,9 @@ public sealed class RuleCatalog
                     BaseConfidence: 0.85),
                 "system"),
             new DroppedExecutableRule(),
+            new AutostartKeyRule(),
+            new ScheduledTaskRule(),
+            new MassFileCreationRule(),
             new RiskyPortRule(),
         ];
 

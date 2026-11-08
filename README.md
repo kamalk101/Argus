@@ -16,7 +16,7 @@ malicious. It does not scan a file and print a verdict.
 | 0 | Solution, event contract, docs, scripts | **done** (Linux-verified) |
 | 1 | Core model, scope tracking, scoring, SQLite, replay harness, fixtures | **done** (Linux-verified) |
 | 2 | ETW collectors + elevated agent host | **done on Windows** for process, file, network+DNS capture and the API guards; `--elevate` UAC consent click unverified (unattended VM), registry volume and loss under load unverified |
-| 3 | Full 22-rule catalogue + correlation | **started**; file-write evidence (create vs open) landed, 7 of 22 rules shipped |
+| 3 | Full 22-rule catalogue + correlation | **in progress**; 10 of 22 rules shipped and verified live (persistence, system write, payload drop, mass file creation, unexpected shell, encoded interpreter, risky port, persistence-then-network) |
 | 3 | Full 22-rule catalogue + correlation | not started |
 | 4 | Dashboard (8 screens) | not started |
 | 5 | Windows end-to-end, reports, tuning | not started |
@@ -25,10 +25,10 @@ malicious. It does not scan a file and print a verdict.
 
 Full plan and phase acceptance criteria: [`PLAN.md`](PLAN.md).
 
-**What is verified today:** 123 unit tests (78 core, 34 analysis, 11 storage), 16 recorded
+**What is verified today:** 140 unit tests (82 core, 47 analysis, 11 storage), 22 recorded
 scenarios replaying through the real pipeline with asserted verdicts, SQLite persistence and
-FTS search round-trip, and a throughput measurement of the analysis stage (~66k events/s on
-synthetic input in the latest run). The Windows projects (`Argus.Monitor`, `Argus.Agent`)
+FTS search round-trip, and live ETW sessions on Windows that produced real `F-002`, `F-003`,
+`F-004` and `F-007` detections from a benign probe. The Windows projects (`Argus.Monitor`, `Argus.Agent`)
 compile on Linux with `EnableWindowsTargeting`, and their platform-neutral mapping, sampling
 and volume logic is covered by the core tests.
 

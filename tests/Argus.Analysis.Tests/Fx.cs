@@ -54,6 +54,49 @@ internal static class Fx
 
     public static RawEvent RootStart() => ProcessStart(RootPid, 9999, "sample.exe", RootPath);
 
+    /// <summary>
+    /// A process start whose image name is exactly what the sensor reported, which is
+    /// sometimes extension-less (live ETW gave ImageFileName="schtasks").
+    /// </summary>
+    public static RawEvent ProcessStartWithImage(int pid, int? parentPid, string imageName, string? commandLine, double seconds = 0) => new()
+    {
+        Ts = T0.AddSeconds(seconds),
+        Kind = EventKind.ProcessStart,
+        Pid = pid,
+        ParentPid = parentPid,
+        ImageName = imageName,
+        CommandLine = commandLine,
+        Source = EventSourceKind.Replay,
+    };
+
+    /// <summary>A registry value write, as the kernel registry provider reports it.</summary>
+    public static RawEvent RegistryOp(int pid, string key, double seconds = 1, EventKind kind = EventKind.RegistrySetValue) => new()
+    {
+        Ts = T0.AddSeconds(seconds),
+        Kind = kind,
+        Pid = pid,
+        Target = key,
+        Source = EventSourceKind.Replay,
+    };
+
+    /// <summary>
+    /// A burst of file creates (or writes/opens, per <paramref name="kind"/> and
+    /// <paramref name="effect"/>) spread evenly over <paramref name="span"/> seconds.
+    /// </summary>
+    public static IEnumerable<RawEvent> MassCreates(
+        int count,
+        double seconds,
+        double span,
+        EventKind kind = EventKind.FileCreate,
+        FileEffect? effect = FileEffect.CreatedOrTruncated)
+    {
+        var step = count > 1 ? span / (count - 1) : 0;
+        for (var i = 0; i < count; i++)
+        {
+            yield return FileOp(kind, RootPid, $@"C:\argus-test\bulk\f{i:D4}.dat", seconds + (i * step), effect: effect);
+        }
+    }
+
     public static (SessionSnapshot Snapshot, IReadOnlyList<BehaviorEvent> Events) Run(
         IEnumerable<RawEvent> events,
         TimeSpan? mergeWindow = null,

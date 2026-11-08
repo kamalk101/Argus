@@ -38,4 +38,35 @@ internal static class ProcessNames
         var index = value.LastIndexOfAny(['\\', '/']);
         return index < 0 ? value : value[(index + 1)..];
     }
+
+    /// <summary>
+    /// True when the reported image name is in <paramref name="names"/>.
+    ///
+    /// The kernel process provider does not always report the extension: a live capture
+    /// of <c>schtasks /query</c> arrived as <c>ImageFileName="schtasks"</c>, and
+    /// <c>PING.EXE</c> arrived in full. Comparing the literal name against a set of
+    /// "x.exe" names silently missed every child whose name came without it, so both
+    /// spellings are accepted.
+    /// </summary>
+    public static bool IsOneOf(string image, IReadOnlySet<string> names)
+    {
+        if (string.IsNullOrEmpty(image))
+        {
+            return false;
+        }
+
+        if (names.Contains(image))
+        {
+            return true;
+        }
+
+        return !image.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            && names.Contains(image + ".exe");
+    }
+
+    /// <summary>Name for reason text: always with the extension, whichever form arrived.</summary>
+    public static string Display(string image) =>
+        string.IsNullOrEmpty(image) || image.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? image
+            : image + ".exe";
 }
