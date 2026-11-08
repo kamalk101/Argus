@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **96 tests** (61 core, 24 analysis, 11 storage), **14/14** asserted
+Current automated counts: **105 tests** (70 core, 24 analysis, 11 storage), **14/14** asserted
 replay scenarios, 7 shipped rules (`F-001`, `F-005`, `F-007`, `N-001`, `P-002`, `P-003`,
 `X-001`).
 
@@ -163,22 +163,18 @@ Relevant regression tests:
 - Run `dotnet test Argus.sln` and `dotnet run --project src/Argus.Cli -- replay
   tests/fixtures/scenarios --assert` after every rule or pipeline change.
 
-## 7. Phase 2.5 hardening — required before Phase 3
+## 7. Phase 2.5 hardening — done at `abc8960`
 
-Phase 2 is functionally proven, but `f074b6c` landed without tests and left a few sharp edges.
-Do every item here first. They are small, and they make the Phase 3 rule work trustworthy.
+Phase 2 was functionally proven, but `f074b6c` landed without tests and left a few sharp edges.
+All six items below are done; §7.6 is the verification report. The **contracts** they establish
+are still binding for future work: a malformed payload throws (the collector is the boundary),
+a known-but-uninteresting kind returns `null`, and an unresolvable file path is partial
+evidence, never an ignored record.
 
-### 7.1 Reconcile the three docs (do this first)
+### 7.1 Reconcile the three docs — done
 
-`docs/HANDOFF.md` (this file) says file/network/DNS/API are verified, but `README.md` and
-`PLAN.md` still say they are pending:
-
-- `README.md:18` — "file/network/DNS volume, UAC and API/SSE checks pending"
-- `README.md:43-44` — "implemented but still need their own checks"
-- `PLAN.md:625` — "file/net/UAC/API ⏳"
-- `PLAN.md:613-614` — "still need their own Windows checks"
-
-Make both files match §3 exactly:
+`docs/HANDOFF.md` §3 said file/network/DNS/API were verified while `README.md` and `PLAN.md`
+still said they were pending. Both now tell the same story:
 
 - **verified:** ETW process capture, file capture, network + DNS capture, API guards
   (401/403/400), SSE `state`/`stats`, non-elevated refusal (exit 3), `verify.ps1 -Smoke`;
@@ -190,7 +186,13 @@ Make both files match §3 exactly:
 Do not overclaim and do not delete limitations. Acceptance: the three files tell the same
 story; grep for `pending`, `still need` and `unverifiable` and check every hit.
 
-### 7.2 Lock the mapper contract with tests
+Done: `README.md` (status table, verified/partial/unverified sections) and `PLAN.md`
+(capability matrix, Phase 2 progress note, Phase 2 heading) now match §3. `PLAN.md`'s matrix
+also claimed the `web/` dashboard "builds, runs, verified in browser"; it does not exist yet
+and now says so. Keep the three files in step: when a leg becomes verified, change all three
+in the same commit.
+
+### 7.2 Lock the mapper contract with tests — done
 
 `f074b6c` removed the catch-all from `src/Argus.Core/Monitoring/EtwEventMapper.cs` but added
 no tests. Add to `tests/Argus.Core.Tests/MonitoringTests.cs`:
@@ -205,7 +207,13 @@ The `Unmapped`/`MappingFailures` counters live in `Argus.Monitor` (`net8.0-windo
 test project references it. Do **not** retarget the test projects; cover the counters through
 `--self-test` on the VM (§7.4). Acceptance: `dotnet test Argus.sln` green, 96 + new tests.
 
-### 7.3 Make the collector's per-record boundary total
+Done: 9 new tests (7 here, 2 in §7.5), suite 96 -> 105. The tests are
+`Malformed_payload_throws_instead_of_returning_null`,
+`Malformed_process_payload_throws_instead_of_returning_null`,
+`Known_but_ignored_record_returns_null` (theory: `FileIOClose`, `TcpIpSend`, `ThreadStart`,
+`SystemConfigCPU`) and `Valid_kernel_process_start_maps_after_parser_registration`.
+
+### 7.3 Make the collector's per-record boundary total — done
 
 `src/Argus.Monitor/EtwCollector.cs` (~lines 197-200) catches only
 `InvalidOperationException`, `ArgumentException`, `NotSupportedException`, `FormatException`,
@@ -219,7 +227,12 @@ pure mapper free of catch-alls — the throw is the contract, the collector is t
 A bounded sample of the last few exception messages in stats is fine; never log payloads.
 Acceptance: a malformed record cannot terminate the pump; re-run the §7.2 tests.
 
-### 7.4 Fix the ETW self-test race and strengthen `etw-delivery`
+Done: `OnAllEvents` catches `Exception` around map+emit. `MonitorStats.MappingFailureSamples`
+keeps the last five descriptors as `"<EventName>#<id> <ExceptionType>"` — record identity and
+exception type only, because format-error messages quote the offending payload value and
+payload values are captured data.
+
+### 7.4 Fix the ETW self-test race and strengthen `etw-delivery` — done
 
 `src/Argus.Agent/AgentSelfTest.cs`:
 
@@ -236,7 +249,11 @@ Acceptance: a malformed record cannot terminate the pump; re-run the §7.2 tests
 Acceptance: `--self-test --json` passes three runs in a row with `EventsSeen > 0`,
 `ProcessStarts > 0` and a plausible `MappingFailures`.
 
-### 7.5 Stop silently dropping unresolvable file events
+Done: 2 s delay added before the generated activity; `etw-delivery` now requires callbacks,
+`EventsSeen > 0` **and** `ProcessStarts > 0`, and its detail names which of the three is
+missing. `MappingFailures > 0` adds a warning naming the records that failed to decode.
+
+### 7.5 Stop silently dropping unresolvable file events — done
 
 `src/Argus.Core/Monitoring/EtwEventMapper.cs` (~lines 161-165): a file event whose path cannot
 be resolved returns `null`, which the collector counts as `Unmapped` (an ignored kind). That is
@@ -248,24 +265,63 @@ Prefer (a) if downstream rules tolerate a null target. Acceptance: a file record
 `FileName`, no `OpenPath` and no cached FileKey produces a partial event or a recorded gap,
 not an `Unmapped` increment.
 
-### 7.6 Verify and report
+Done: option (a), which is safe because every downstream consumer already guards on an empty
+path (`SensitiveWriteRule`/`DroppedExecutableRule` bail on an empty `PathKey`,
+`EventNormalizer` yields an empty key, `EventRepository`/`RollupService` store `null`).
+`MapFile` returns `Observability.Partial`, no `Target`, and
+`Detail = {"pathUnresolved":"true","fileKey":"<key>"}`. Renames with no resolvable path are
+handled the same way.
+
+### 7.6 Verification report — `abc8960`
+
+Commands, all from an elevated PowerShell in `C:\Users\kamal\Argus`:
 
 ```powershell
-./scripts/verify.sh          # Linux: build, tests, 14 replay scenarios, selftest
-./scripts/verify.ps1         # Windows: build + tests
-./scripts/verify.ps1 -Smoke  # Windows elevated: self-test, notepad capture, replay
+./scripts/verify.ps1           # build + tests + 14 replay scenarios + selftest
+./scripts/verify.ps1 -Smoke    # + self-test, 15 s notepad capture, replay of that recording
+dotnet run --project src/Argus.Agent -- --self-test --json   # x3
 ```
 
-Report: exact commit, exact commands, test count before/after, self-test output (callbacks,
-events seen, process starts, mapping failures, unmapped), confirmation the three docs agree,
-and what is still unverified (registry, loss under load, UAC consent, 7z). Do not claim ETW
-works from compilation or replay alone.
+```text
+verify.ps1          : pass. 105 tests (70 core, 24 analysis, 11 storage).
+                      14/14 asserted replay scenarios. selftest load 20000 events in 974 ms
+                      (20,529 events/s).
+verify.ps1 -Smoke   : pass. self-test 2,959 events seen / 421 forwarded in the 2 s probe;
+                      notepad session recorded 2 raw event lines; replay 1/1 (benign, 0 dets).
+--self-test x3      : pass, pass, pass.
+  callbacks          42,236 / 6,924 / 10,570
+  filtered           1,391  / 1,333 / 1,335
+  events seen        3,379  / 491   / 566
+  process starts     4      / 2     / 2
+  file events        136    / 136   / 137
+  unmapped           37,466 / 5,100 / 8,669
+  mapping failures   0      / 0     / 0
+```
+
+File capture re-checked after the §7.5 mapper change, with a `cmd.exe` target driven by a
+batch probe (3 s delay, writes under `%TEMP%\argus-writes`, then a further 2 s):
+
+```text
+46 events: 36 fileCreate, 3 fileWrite, 2 fileRead, 3 processStart, 2 processStop
+15 events under %TEMP%\argus-writes, all PID-attributed
+0 raw \Device\ paths, 0 gaps, 0 pathUnresolved events (nothing regressed)
+replay exit 0, verdict Suspicious (F-005, F-007)
+```
+
+The two F-005 hits are a rule-quality finding, not a regression: ETW `FileIO/Create` means
+**create-or-open**, so cmd opening `C:\Windows\System32\PING.EXE` is recorded as a
+`fileCreate` in System32 and `F-005` reports it as a system write. Triage this in Phase 3
+(differentiate create from open, or require a `FileWrite` on the same path) before the benign
+corpus is used as an acceptance gate.
+
+Still unverified after this pass: registry capture under real activity, event loss and the
+volume fuse under load, `7z.exe` or any non-trivial target, the UAC consent click, and the
+dashboard. Do not claim ETW works from compilation or replay alone.
 
 ## 8. Immediate tasks, in order
 
-Status after the 2026-11 verification pass: Phase 2 tasks 1-6 are complete except the parts
-listed under "Not yet verified" in §3. **Phase 3 is blocked until §7 (Phase 2.5) is done.**
-After §7, start Phase 3.
+Status after the Phase 2.5 pass at `abc8960`: Phase 2 tasks 1-6 are complete except the parts
+listed under "Not yet verified" in §3, and **§7 is done**. Phase 3 is unblocked.
 
 1. **Pull and verify.** — done (`git pull --ff-only` already up to date, `verify.ps1` green).
    ```powershell
@@ -304,7 +360,8 @@ After §7, start Phase 3.
    this VM. Re-verify the parent handshake interactively, then tick this task.
 7. **Then start Phase 3**: the full 22-rule catalogue from `PLAN.md` §6.3, with fixtures,
    aggregation/escalation and correlated rules. Do not start the dashboard first.
-   **Blocked by §7 — finish the Phase 2.5 hardening first.**
+   **Unblocked — §7 (Phase 2.5) is done at `abc8960`.** Triage the `FileIO/Create`
+   create-or-open false positive on `F-005` (§7.6) as part of that rule work.
 
 ## 9. Commands
 
@@ -358,6 +415,18 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   `RawEventJson`/`ScenarioLoader` and re-running replay.
 - Keep the agent bound to `127.0.0.1`, keep the token check and Host/Origin guards, and do
   not put the token in a URL or a world-readable file.
+- `dotnet run --project src/Argus.Agent -- --args "-NoProfile -Command \"...\""` does **not**
+  preserve embedded quotes: `dotnet run` re-splits the child argument list and the agent exits 2
+  with `Unexpected argument '2;'`. Invoke the built assembly directly
+  (`& $dotnet src/Argus.Agent/bin/Debug/net8.0-windows/argus-agent.dll @cliArgs` with a
+  PowerShell argument array), or use a target whose arguments need no nesting —
+  `cmd.exe --args "/c <batch file>"` is the reliable shape.
+- `timeout /t N` inside a batch probe exits immediately when the parent redirects stdin, so a
+  "delayed" probe runs before ETW is consuming and captures nothing. Use
+  `ping -n <N+1> 127.0.0.1 > nul` for the delay instead.
+- ETW `FileIO/Create` means create-**or-open**. Opening `C:\Windows\System32\PING.EXE` arrives
+  as a `fileCreate` in System32 and makes `F-005` report a system write. Do not read a
+  `fileCreate` as evidence of a write.
 - If you run tests on Linux, use `~/.dotnet/dotnet` if `dotnet` is not on `PATH`.
 
 ## 11. Reporting discipline
