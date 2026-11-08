@@ -967,9 +967,39 @@ to tune with fixtures rather than suppression: the interpreter scratch `.ps1` in
 (§10), and utility `cmd.exe`/`powershell.exe` children under `P-002` when the parent is an
 installer or IDE.
 
-Two things worth picking up from§12.11: the metadata race that hides signatures for short-lived
-processes (a bounded retry in the metadata lookup would convert misses into results, but it runs on
-the ETW consumption thread, so measure before adding latency), and whether F-001 plus X-002 on a single
-write *should* reach Malicious — fixture 46 scores 39.6 rather than 85 because both carry the file
-category and the scorer correctly refuses to treat them as independent. That is a grouping decision,
-not a rule change.
+Two things worth picking up from§12.11. First, the metadata race that hides signatures for short-lived
+processes — a bounded retry was tried and **rejected on measurement**, see §12.12. Second, whether F-001
+plus X-002 on a single write *should* reach Malicious: fixture 46 scores 39.6 rather than 85 because
+both carry the file category and the scorer correctly refuses to treat them as independent. That is a
+grouping decision, not a rule change.
+
+### 12.12 A bounded metadata retry: measured, and not shipped
+
+The suggestion at the end of§12.11 was to retry the process-metadata lookup so short-lived processes are
+enriched more often. It was implemented and measured before being documented as an improvement, and it
+made things worse.
+
+Probe: a script launching `whoami.exe` (about 20 ms of life) twelve times under a monitored
+`powershell.exe`, counting how many `processStart` records came back with a resolved `imagePath`. Same
+machine, same probe, two runs per condition.
+
+| Attempts | Delay | Resolved |
+| --- | --- | --- |
+| 1 (baseline) | — | **13 / 24** |
+| 4 | 2 ms | **9 / 24** |
+
+The retry cannot work, and the reason is structural rather than a matter of tuning: between attempts the
+process is *more* dead, never less. The only failure a retry could fix is a transient `OpenProcess`
+denial during creation, and no such failure was observed — every miss is the process having exited. Worse,
+`Thread.Sleep` runs on the ETW dispatch thread, so each doomed retry delays the *next* process-start
+record and pulls that one further past its own process's exit. The measurement is small (24 per
+condition, 13 vs 9) so it does not prove a large regression, but it is nowhere near an improvement, and
+that was enough to revert it. The change is not in the tree.
+
+What this means for the catalogue: a short-lived payload's signature is genuinely unavailable, and P-005
+misses it rather than guessing. Closing that properly needs enrichment off the dispatch thread (a
+background queue with events patched afterwards), which is an architectural change with its own ordering
+hazards — not a retry. The honest statement in `docs/RULES.md` stands.
+
+Tests: 237 (96 core, 130 analysis, 11 storage); 47/47 fixtures. Tree unchanged by this experiment beyond
+this note.

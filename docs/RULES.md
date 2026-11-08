@@ -70,9 +70,12 @@ trusted", never "the publisher is not revoked". Measured end to end: `whoami.exe
 
 One live limitation, stated rather than papered over: the signature is only known if the process is
 still alive when the sensor opens it. A payload that exits in milliseconds often yields no value at
-all — observed repeatedly — so P-005 misses those rather than guessing. Most unsigned utilities on a
-workstation are harmless, which is why P-005 is the quietest process signal at severity 30 and adds
-provenance, not intent.
+all — observed repeatedly — so P-005 misses those rather than guessing. A bounded retry of that lookup
+was tried and measured: it resolved 9 of 24 short-lived launches against 13 of 24 without it, because
+between attempts the process is more dead, never less, and the sleep blocks the ETW dispatch thread for
+the next record. It was reverted rather than shipped. Most unsigned utilities on a workstation are
+harmless, which is why P-005 is the quietest process signal at severity 30 and adds provenance, not
+intent.
 
 **How P-008 infers cross-process creation (it is an inference, and the report says so).**
 Nothing in the enabled kernel keywords reports `CreateRemoteThread` or an APC injection, so there is
