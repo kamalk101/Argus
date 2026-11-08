@@ -39,6 +39,13 @@ public sealed record RawEvent
 
     public long? BytesIn { get; init; }
 
+    /// <summary>
+    /// What the file operation did to the file, when the sensor can tell. A
+    /// <see cref="EventKind.FileCreate"/> with <see cref="Events.FileEffect.Opened"/> is
+    /// an open of an existing file, not a write to it.
+    /// </summary>
+    public FileEffect? FileEffect { get; init; }
+
     public string? Detail { get; init; }
 
     public Observability? Observability { get; init; }

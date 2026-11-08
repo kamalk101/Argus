@@ -47,8 +47,11 @@ public sealed class PersistenceThenNetworkRule : ICorrelatedRule
         {
             var candidate = recentFiles[i];
             if (candidate.Kind is not (EventKind.FileCreate or EventKind.FileWrite or EventKind.FileRename)
-                || string.IsNullOrEmpty(candidate.PathKey))
+                || string.IsNullOrEmpty(candidate.PathKey)
+                || !FileChangeEvidence.IsContentChange(candidate))
             {
+                // A bare create is create-or-open, so it is not evidence that anything
+                // was written into the persistence location.
                 continue;
             }
 

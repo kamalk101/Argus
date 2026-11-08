@@ -181,6 +181,8 @@ public sealed class EtwEventMapper
             _fileKeys.Remove(deleteKey);
         }
 
+        var size = FileSize(record);
+
         return new RawEvent
         {
             Ts = record.TimestampUtc,
@@ -188,11 +190,94 @@ public sealed class EtwEventMapper
             Pid = record.Pid,
             Tid = record.Tid,
             Target = path,
-            Detail = BytesDetail(record),
+            // Byte counts belong in the contract fields, not only in Detail: the rules
+            // must be able to tell a create that carried content from an empty one.
+            BytesOut = kind is EventKind.FileCreate or EventKind.FileWrite ? size : null,
+            BytesIn = kind is EventKind.FileRead ? size : null,
+            FileEffect = kind == EventKind.FileCreate ? CreateEffect(record, path) : null,
+            Detail = FileDetail(record, kind.Value),
             Observability = Observability.Direct,
             Source = EventSourceKind.Etw,
         };
     }
+
+    /// <summary>
+    /// Reads the create disposition that TraceEvent already decoded for us. Kernel
+    /// <c>FileIO/Create</c> is "create or open", and this field is the only thing that
+    /// separates the two: <c>OPEN_EXISTING</c> is an open of a file that already
+    /// existed, while <c>CREATE_ALWAYS</c>/<c>CREATE_NEW</c>/<c>TRUNCATE_EXISTING</c>
+    /// changed its content. <c>OPEN_ALWAYS</c> is genuinely ambiguous.
+    ///
+    /// A directory create is the same record shape but has no content, so it is left
+    /// Unknown: creating a directory is not writing a file.
+    /// </summary>
+    private static FileEffect? CreateEffect(EtwRecord record, string? path)
+    {
+        if (IsDirectory(record) || (path is not null && path.EndsWith('\\')))
+        {
+            return FileEffect.Unknown;
+        }
+
+        var disposition = FirstString(record, "CreateDisposition");
+        if (disposition is null)
+        {
+            return null;
+        }
+
+        return disposition.ToUpperInvariant() switch
+        {
+            "CREATE_ALWAYS" or "CREATE_NEW" or "SUPERSEDE" or "TRUNCATE_EXISTING"
+                => FileEffect.CreatedOrTruncated,
+            "OPEN_EXISTING" or "OPEN" => FileEffect.Opened,
+            _ => FileEffect.Unknown,
+        };
+    }
+
+    /// <summary>
+    /// A directory create is reported as a Create record too, with
+    /// <c>FileAttributes=Normal</c> — the directory bit is in the create options
+    /// (<c>FILE_DIRECTORY_FILE = 0x1</c>), which is what Windows sets when
+    /// CryptSvc recreates <c>System32\CatRoot2</c> during signature checks. Without
+    /// this check that directory creation reads as a system file write.
+    /// </summary>
+    private static bool IsDirectory(EtwRecord record)
+    {
+        const long FileDirectoryFile = 0x1;
+        const long AttributeDirectory = 0x10;
+
+        return HasFlag(record, "CreateOptions", FileDirectoryFile)
+            || HasFlag(record, "FileAttributes", AttributeDirectory)
+            || AttributeTextContainsDirectory(record);
+    }
+
+    private static bool HasFlag(EtwRecord record, string name, long mask)
+    {
+        if (!record.Payload.TryGetValue(name, out var value) || value is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var numeric = value switch
+            {
+                byte[] { Length: 4 } bytes => BitConverter.ToUInt32(bytes, 0),
+                byte[] { Length: 8 } bytes => (long)BitConverter.ToUInt64(bytes, 0),
+                _ => Convert.ToInt64(value, CultureInfo.InvariantCulture),
+            };
+
+            return (numeric & mask) != 0;
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException)
+        {
+            // A payload shape we cannot read leaves the attribute unknown, which is not
+            // a decode failure of the record itself.
+            return false;
+        }
+    }
+
+    private static bool AttributeTextContainsDirectory(EtwRecord record) =>
+        FirstString(record, "FileAttributes")?.Contains("DIRECTORY", StringComparison.OrdinalIgnoreCase) == true;
 
     private static RawEvent UnresolvedPathEvent(EtwRecord record, EventKind kind, ulong? fileKey)
     {
@@ -398,27 +483,49 @@ public sealed class EtwEventMapper
         }
     }
 
-    private static string? BytesDetail(EtwRecord record)
+    private static string? FileDetail(EtwRecord record, EventKind kind)
     {
-        var size = FirstUInt64(record, "IoSize", "Size", "TransferSize");
+        var detail = new Dictionary<string, object?>();
+
+        // Kernel FileIO/Create is create-or-open: opening an existing DLL to load it and
+        // writing a new file are the same record. Recording the ambiguity here keeps the
+        // fact explicit for reports and for rules that must not read it as a write.
+        if (kind == EventKind.FileCreate)
+        {
+            detail["createOrOpen"] = true;
+
+            // The disposition decides whether this record means "opened" or "wrote";
+            // keep the raw value so the evidence panel can show it.
+            var disposition = FirstString(record, "CreateDisposition");
+            if (disposition is not null)
+            {
+                detail["disposition"] = disposition;
+            }
+
+            if (IsDirectory(record))
+            {
+                detail["directory"] = true;
+            }
+        }
+
         var offset = FirstUInt64(record, "Offset", "FileOffset");
-        if (size is null && offset is null)
-        {
-            return null;
-        }
-
-        var detail = new Dictionary<string, long?>();
-        if (size is { } sizeValue)
-        {
-            detail["bytes"] = sizeValue > long.MaxValue ? long.MaxValue : (long)sizeValue;
-        }
-
         if (offset is { } offsetValue)
         {
             detail["offset"] = offsetValue > long.MaxValue ? long.MaxValue : (long)offsetValue;
         }
 
-        return JsonSerializer.Serialize(detail);
+        return detail.Count == 0 ? null : JsonSerializer.Serialize(detail);
+    }
+
+    private static long? FileSize(EtwRecord record)
+    {
+        var size = FirstUInt64(record, "IoSize", "Size", "TransferSize");
+        if (size is not { } value)
+        {
+            return null;
+        }
+
+        return value > long.MaxValue ? long.MaxValue : (long)value;
     }
 
     private static void AddDetail(Dictionary<string, string?> detail, string key, object? value)

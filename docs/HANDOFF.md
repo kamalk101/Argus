@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **105 tests** (70 core, 24 analysis, 11 storage), **14/14** asserted
+Current automated counts: **123 tests** (78 core, 34 analysis, 11 storage), **16/16** asserted
 replay scenarios, 7 shipped rules (`F-001`, `F-005`, `F-007`, `N-001`, `P-002`, `P-003`,
 `X-001`).
 
@@ -273,7 +273,6 @@ path (`SensitiveWriteRule`/`DroppedExecutableRule` bail on an empty `PathKey`,
 handled the same way.
 
 ### 7.6 Verification report — `abc8960`
-
 Commands, all from an elevated PowerShell in `C:\Users\kamal\Argus`:
 
 ```powershell
@@ -310,9 +309,8 @@ replay exit 0, verdict Suspicious (F-005, F-007)
 
 The two F-005 hits are a rule-quality finding, not a regression: ETW `FileIO/Create` means
 **create-or-open**, so cmd opening `C:\Windows\System32\PING.EXE` is recorded as a
-`fileCreate` in System32 and `F-005` reports it as a system write. Triage this in Phase 3
-(differentiate create from open, or require a `FileWrite` on the same path) before the benign
-corpus is used as an acceptance gate.
+`fileCreate` in System32 and `F-005` reports it as a system write. This was triaged at the
+start of Phase 3 — see §12.
 
 Still unverified after this pass: registry capture under real activity, event loss and the
 volume fuse under load, `7z.exe` or any non-trivial target, the UAC consent click, and the
@@ -424,9 +422,21 @@ be replayed on Linux with the same `Argus.Cli replay` command.
 - `timeout /t N` inside a batch probe exits immediately when the parent redirects stdin, so a
   "delayed" probe runs before ETW is consuming and captures nothing. Use
   `ping -n <N+1> 127.0.0.1 > nul` for the delay instead.
-- ETW `FileIO/Create` means create-**or-open**. Opening `C:\Windows\System32\PING.EXE` arrives
-  as a `fileCreate` in System32 and makes `F-005` report a system write. Do not read a
-  `fileCreate` as evidence of a write.
+- ETW `FileIO/Create` means create-**or-open**, and the two live cases look identical apart from
+  one field. TraceEvent already decodes `CreateDisposition` (`OPEN_EXISTING` for the loader
+  opening `PING.EXE`, `CREATE_ALWAYS`/`CREATE_NEW` for a real write), and the mapper turns it
+  into `RawEvent.FileEffect`. **Do not** read a `fileCreate` with `FileEffect.Opened` as a
+  write, and do not add a rule that does.
+- A directory create arrives as a Create record too, with `FileAttributes=Normal`: the marker
+  is `FILE_DIRECTORY_FILE` (0x1) in `CreateOptions` (live value 2113569 = 0x204021), or a
+  trailing separator in the name. Windows recreates `System32\CatRoot2` this way during
+  signature checks; treating it as a file write is a false positive.
+- A same-volume `copy` produces **no** `FileWrite` events at all (extent duplication): measured
+  one `CREATE_ALWAYS` create and zero writes for a 53 KB `copy /y`. Any rule that waits for a
+  write to confirm a drop will miss the most common drop method — use the create disposition.
+- A child `powershell.exe` writes its own `__psscriptpolicytest_*.ps1` into `%TEMP%` on every
+  invocation, which `F-007` correctly but noisily reports. Expect it in interpreter-heavy
+  trees and do not "fix" it by suppressing script drops.
 - If you run tests on Linux, use `~/.dotnet/dotnet` if `dotnet` is not on `PATH`.
 
 ## 11. Reporting discipline
@@ -440,3 +450,55 @@ Every handoff should state:
 - any new limitation discovered.
 
 Never report "ETW works" or "monitoring is safe" from compilation or from a replay alone.
+
+## 12. Phase 3 work log
+
+### 12.1 File write evidence: create vs open — done
+
+The first Phase 3 item was the `F-005` false positive found during the Phase 2.5 pass: ETW's
+kernel `FileIO/Create` covers create **and** open, so opening `System32\PING.EXE` to run it was
+reported as a system write. Fixing it at the rule level alone is wrong, because the
+discriminator lives in the sensor:
+
+- **`RawEvent.FileEffect`** (`Argus.Core.Events.FileEffect`: `Unknown` / `Opened` /
+  `CreatedOrTruncated`) carries what the operation did. The mapper decodes TraceEvent's
+  `CreateDisposition` (`OPEN_EXISTING` → `Opened`; `CREATE_ALWAYS`/`CREATE_NEW`/`SUPERSEDE`/
+  `TRUNCATE_EXISTING` → `CreatedOrTruncated`; `OPEN_ALWAYS` → `Unknown`). Directory creates are
+  `Unknown` (see the pitfall in §10). Sensors without a disposition leave it null.
+- **`Argus.Analysis.Rules.FileChangeEvidence`** is the single shared decision used by `F-001`,
+  `F-005`, `F-007` and `X-001`: writes, deletes and renames are content changes; a create is one
+  only with `CreatedOrTruncated`, or with bytes attributed when the effect is unknown. An
+  ambiguous create is never treated as a write.
+- **Byte counts moved into the contract**: the mapper now sets `BytesOut`/`BytesIn` (and keeps
+  `offset`/`disposition` in `Detail`) instead of burying bytes in `Detail` only. Recordings made
+  before this commit carry `Detail.bytes` and no `BytesOut`, so their creates replay as
+  ambiguous — replayable, deliberately more conservative.
+
+Measured live on the VM (elevated, `cmd.exe` root, batch probe: `ping`, `copy /y
+System32\PING.EXE %TEMP%\argus-writes\stage3.exe`, a PowerShell write):
+
+```text
+855 events: 677 fileCreate (570 opened, 12 createdOrTruncated, 95 unknown), 118 fileRead,
+57 fileWrite, 2 fileDelete, 4 processStart, 4 processStop, 0 gaps
+replay: Suspicious 35.1, 2 detections, both F-007
+  F-007  stage3.exe dropped in %TEMP%\argus-writes   (copy: CREATE_ALWAYS, zero writes)
+  F-007  __psscriptpolicytest_*.ps1 in %TEMP%        (the child powershell's own probe)
+no F-005 at all: the PING.EXE open and the CatRoot2 directory create are correctly ignored
+```
+
+Before the fix the same probe produced `F-005 "write to System32"` for `PING.EXE`. After it,
+precision was kept in the other direction too: gating on `FileWrite` alone would have missed
+`stage3.exe`, because a same-volume copy emits no writes (see §10).
+
+Tests: **123** (78 core, 34 analysis, 11 storage), fixtures **16/16** (new:
+`15-system-open-benign` proves an open is not a write, `16-dropped-then-written` proves a
+copy-style drop with no write event is still found exactly once).
+
+### 12.2 Next in Phase 3
+
+The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
+aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use
+`FileChangeEvidence` for every file rule — do not reintroduce "create means wrote". Known noise
+to tune with fixtures rather than suppression: the interpreter scratch `.ps1` in `%TEMP%`
+(§10), and utility `cmd.exe`/`powershell.exe` children under `P-002` when the parent is an
+installer or IDE.

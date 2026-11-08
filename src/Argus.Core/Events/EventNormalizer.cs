@@ -50,6 +50,7 @@ public sealed class EventNormalizer
             HostName = raw.HostName,
             BytesOut = raw.BytesOut,
             BytesIn = raw.BytesIn,
+            FileEffect = raw.FileEffect,
             Detail = raw.Detail,
             Observability = observability,
             Confidence = raw.Confidence ?? DefaultConfidence(observability),

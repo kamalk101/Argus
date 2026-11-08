@@ -43,20 +43,20 @@ public sealed class SensitiveWriteRule : IEventRule
             yield break;
         }
 
+        if (!FileChangeEvidence.IsContentChange(current))
+        {
+            // A bare create is create-or-open in ETW: opening a system binary must not
+            // read as writing it. See FileChangeEvidence for the reasoning.
+            yield break;
+        }
+
         if (!context.Catalog.TryMatch(current.PathKey, out var entry)
             || !string.Equals(entry.Group, _group, StringComparison.OrdinalIgnoreCase))
         {
             yield break;
         }
 
-        var operation = current.Kind switch
-        {
-            EventKind.FileCreate => "created",
-            EventKind.FileWrite => "modified",
-            EventKind.FileRename => "renamed or moved into",
-            EventKind.FileDelete => "deleted",
-            _ => "touched",
-        };
+        var operation = FileChangeEvidence.Operation(current.Kind);
 
         var purpose = GroupPurpose.TryGetValue(entry.Group, out var text) ? text : "a sensitive location";
 
@@ -64,10 +64,11 @@ public sealed class SensitiveWriteRule : IEventRule
         {
             Rule = Metadata,
             Reason = $"The application {operation} {current.Target}, inside {entry.Label} — {purpose}.",
-            Counterfactual = $"Would not fire if the path were outside the catalogued {entry.Group} locations.",
+            Counterfactual = $"Would not fire if the path were outside the catalogued {entry.Group} locations, or if the file had only been opened (create disposition OPEN_EXISTING) rather than created or truncated.",
             Factors =
             [
                 $"operation={current.Kind}",
+                $"evidence={FileChangeEvidence.Evidence(current)}",
                 $"path={current.PathKey}",
                 $"catalog_group={entry.Group}",
                 $"catalog_label={entry.Label}",

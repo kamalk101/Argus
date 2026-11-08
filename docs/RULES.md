@@ -26,6 +26,31 @@ Phase 3 extends it to the ~22-rule catalogue in `PLAN.md` §6.3 using the same c
 - **65 / 75** — strong but commonly dual-use (installers, updaters, admins).
 - **45 / 50** — signals worth surfacing, insufficient alone.
 
+## What counts as a file write
+
+ETW's kernel `FileIO/Create` covers **both** creating a file and opening an existing one:
+loading `System32\PING.EXE` arrives as a `fileCreate` in System32. Before this was handled,
+`F-005` fired on every system binary a process opened, which made the benign corpus useless.
+
+The sensor's create disposition settles it, and every file rule uses one shared decision
+(`Argus.Analysis.Rules.FileChangeEvidence`):
+
+| Event | Content changed? |
+|---|---|
+| `FileWrite`, `FileDelete`, `FileRename` | yes |
+| `FileCreate` with `FileEffect.CreatedOrTruncated` (`CREATE_ALWAYS`, `CREATE_NEW`, `TRUNCATE_EXISTING`) | yes |
+| `FileCreate` with `FileEffect.Opened` (`OPEN_EXISTING`) | **no** — the file already existed |
+| `FileCreate` with `FileEffect.Unknown` (`OPEN_ALWAYS`, old recordings, no disposition) | only if bytes were attributed to the event |
+| Directory create (`FILE_DIRECTORY_FILE` in the create options, or a trailing separator) | no |
+
+Two consequences worth knowing before writing a rule:
+
+- **Do not wait for a `FileWrite` to confirm a drop.** A same-volume `copy` duplicates file
+extents and emits *no* write events at all — measured: one `CREATE_ALWAYS` create and zero
+writes for a 53 KB `copy /y`. Gating on writes hides the most common drop method.
+- **Fixtures may set `bytesOut` or `fileEffect`** to model a create that carried content. A
+fixture `fileCreate` with neither is an open, and a rule must stay quiet on it.
+
 ## Scoring
 
 Per detection `d` with severity `S`, confidence `c` and age `a`:
@@ -66,7 +91,8 @@ Properties this buys:
    (e.g. the parent that spawned a shell).
 4. Register it in `RuleCatalog.CreateDefault()`.
 5. Add at least two fixtures in `tests/fixtures/scenarios/` — one that fires, one that must
-   stay quiet — and a unit test in `tests/Argus.Analysis.Tests/`.
+   stay quiet — and a unit test in `tests/Argus.Analysis.Tests/`. For a file rule, the quiet
+   fixture is usually the `FileEffect.Opened` case.
 6. `./scripts/verify.sh` must stay green.
 
 ## Fixture format

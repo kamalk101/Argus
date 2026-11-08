@@ -1,0 +1,6 @@
+{"$meta":{"name":"system-open-benign","description":"An application opens and reads an existing System32 binary. ETW records a create-or-open, which must not be reported as a system write.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":[],"absentRules":["F-001","F-005","F-007"],"band":"Benign","maxScore":0,"maxDetections":0}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"fileCreate","pid":4312,"target":"C:\\Windows\\System32\\kernel32.dll","fileEffect":"opened","source":"replay"}
+{"ts":"2026-05-01T10:00:02.100Z","kind":"fileRead","pid":4312,"target":"C:\\Windows\\System32\\kernel32.dll","bytesIn":4096,"source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"fileCreate","pid":4312,"target":"C:\\Windows\\System32\\PING.EXE","fileEffect":"opened","source":"replay"}
+{"ts":"2026-05-01T10:00:03.100Z","kind":"fileRead","pid":4312,"target":"C:\\Windows\\System32\\PING.EXE","bytesIn":8192,"source":"replay"}

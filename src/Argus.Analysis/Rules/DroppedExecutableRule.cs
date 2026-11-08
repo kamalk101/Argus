@@ -34,8 +34,15 @@ public sealed class DroppedExecutableRule : IEventRule
         ArgumentNullException.ThrowIfNull(context);
 
         var current = context.Event;
-        if (current.Kind is not (EventKind.FileCreate or EventKind.FileRename))
+        if (current.Kind is not (EventKind.FileCreate or EventKind.FileWrite or EventKind.FileRename))
         {
+            yield break;
+        }
+
+        if (!FileChangeEvidence.IsContentChange(current))
+        {
+            // A bare create is create-or-open: opening an existing .cmd/.ps1 in a temp
+            // directory is not the same act as dropping one.
             yield break;
         }
 
@@ -67,13 +74,14 @@ public sealed class DroppedExecutableRule : IEventRule
         yield return new RuleFinding
         {
             Rule = Metadata,
-            Reason = $"The application created {extension} payload \"{PathKey.FileName(pathKey)}\" in a user-writable directory ({PathKey.DirectoryName(pathKey)}).",
-            Counterfactual = "Would not fire for a download or installer writing to a user-selected folder only if the extension were not executable.",
+            Reason = $"The application {FileChangeEvidence.Operation(current.Kind)} {extension} payload \"{PathKey.FileName(pathKey)}\" in a user-writable directory ({PathKey.DirectoryName(pathKey)}).",
+            Counterfactual = "Would not fire for a download or installer writing to a user-selected folder only if the extension were not executable, and would not fire for a payload that was only opened (create disposition OPEN_EXISTING) rather than dropped.",
             Factors =
             [
                 $"path={pathKey}",
                 $"extension={extension}",
                 $"writable_location=true",
+                $"evidence={FileChangeEvidence.Evidence(current)}",
             ],
             Target = current.Target,
         };

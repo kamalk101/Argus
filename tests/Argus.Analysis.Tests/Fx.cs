@@ -30,12 +30,14 @@ internal static class Fx
         Source = EventSourceKind.Replay,
     };
 
-    public static RawEvent FileOp(EventKind kind, int pid, string target, double seconds = 1) => new()
+    public static RawEvent FileOp(EventKind kind, int pid, string target, double seconds = 1, long? bytesOut = null, FileEffect? effect = null) => new()
     {
         Ts = T0.AddSeconds(seconds),
         Kind = kind,
         Pid = pid,
         Target = target,
+        BytesOut = bytesOut,
+        FileEffect = effect,
         Source = EventSourceKind.Replay,
     };
 

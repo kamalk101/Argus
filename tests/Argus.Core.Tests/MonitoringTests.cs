@@ -72,8 +72,100 @@ public sealed class MonitoringTests
         Assert.NotNull(written);
         Assert.Equal(EventKind.FileWrite, written.Kind);
         Assert.Equal(@"C:\argus-test\dropped.exe", written.Target);
-        Assert.Contains("\"bytes\":128", written.Detail, StringComparison.Ordinal);
+        Assert.Equal(128, written.BytesOut);
         Assert.Equal(1, mapper.CachedFileKeys);
+    }
+
+    [Fact]
+    public void File_create_is_marked_as_create_or_open_and_keeps_its_size()
+    {
+        // Kernel FileIO/Create covers create and open. The mapper must say so, and it
+        // must put the byte count in BytesOut where rules can see it.
+        var mapper = new EtwEventMapper();
+        var create = Record("FileIOCreate", 12, 5000, ("FileName", @"C:\Windows\System32\x.dll"), ("IoSize", 4096UL));
+
+        var raw = mapper.Map(create);
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.FileCreate, raw.Kind);
+        Assert.Contains("createOrOpen", raw.Detail, StringComparison.Ordinal);
+        Assert.Equal(4096, raw.BytesOut);
+
+        var bareOpen = mapper.Map(Record("FileIOCreate", 12, 5001, ("FileName", @"C:\Windows\System32\kernel32.dll")));
+
+        Assert.NotNull(bareOpen);
+        Assert.Null(bareOpen.BytesOut);
+    }
+
+    [Theory]
+    [InlineData("CREATE_ALWAYS", FileEffect.CreatedOrTruncated)]
+    [InlineData("CREATE_NEW", FileEffect.CreatedOrTruncated)]
+    [InlineData("TRUNCATE_EXISTING", FileEffect.CreatedOrTruncated)]
+    [InlineData("OPEN_EXISTING", FileEffect.Opened)]
+    [InlineData("OPEN_ALWAYS", FileEffect.Unknown)]
+    public void Create_disposition_decides_whether_content_changed(string disposition, FileEffect expected)
+    {
+        // TraceEvent decodes CreateDisposition for us; without it an open and a write
+        // are the same record. Values observed live on the Windows VM.
+        var mapper = new EtwEventMapper();
+        var record = Record("FileIOCreate", 12, 5000,
+            ("FileName", @"C:\Windows\System32\PING.EXE"),
+            ("CreateDisposition", disposition));
+
+        var raw = mapper.Map(record);
+
+        Assert.NotNull(raw);
+        Assert.Equal(expected, raw.FileEffect);
+        Assert.Contains(disposition, raw.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_without_a_disposition_has_no_effect_verdict()
+    {
+        var mapper = new EtwEventMapper();
+
+        var raw = mapper.Map(Record("FileIOCreate", 12, 5000, ("FileName", @"C:\Windows\System32\x.dll")));
+
+        Assert.NotNull(raw);
+        Assert.Null(raw.FileEffect);
+    }
+
+    [Fact]
+    public void Directory_create_is_not_a_file_write()
+    {
+        // Windows recreates System32\CatRoot2 while verifying signatures. It arrives as
+        // a Create with FileAttributes=Normal and FILE_DIRECTORY_FILE in the options
+        // (observed live: CreateOptions=2113569 = 0x204021), so FileAttributes alone is
+        // not enough to tell it from a file create.
+        var mapper = new EtwEventMapper();
+
+        var raw = mapper.Map(Record("FileIOCreate", 12, 5000,
+            ("FileName", @"C:\Windows\system32\catroot2"),
+            ("CreateDisposition", "CREATE_NEW"),
+            ("CreateOptions", 2113569),
+            ("FileAttributes", "Normal")));
+
+        Assert.NotNull(raw);
+        Assert.Equal(FileEffect.Unknown, raw.FileEffect);
+        Assert.Contains("directory", raw.Detail, StringComparison.Ordinal);
+
+        // A file create in the same directory context is still a content change.
+        var file = mapper.Map(Record("FileIOCreate", 12, 5000,
+            ("FileName", @"C:\Windows\System32\evil.dll"),
+            ("CreateDisposition", "CREATE_NEW"),
+            ("CreateOptions", 2113536),
+            ("FileAttributes", "Normal")));
+
+        Assert.NotNull(file);
+        Assert.Equal(FileEffect.CreatedOrTruncated, file.FileEffect);
+
+        // A trailing separator is a directory even without the option flag.
+        var trailing = mapper.Map(Record("FileIOCreate", 12, 5000,
+            ("FileName", @"C:\Windows\system32\CatRoot2\"),
+            ("CreateDisposition", "OPEN_EXISTING")));
+
+        Assert.NotNull(trailing);
+        Assert.Equal(FileEffect.Unknown, trailing.FileEffect);
     }
 
     [Fact]

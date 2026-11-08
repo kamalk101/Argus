@@ -75,14 +75,101 @@ public sealed class RuleTests
         var (snapshot, _) = Fx.Run(
         [
             Fx.RootStart(),
-            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\run.lnk", 2),
-            Fx.FileOp(EventKind.FileWrite, Fx.RootPid, @"C:\Windows\System32\drivers\evil.sys", 3),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\run.lnk", 2, bytesOut: 2048),
+            Fx.FileOp(EventKind.FileWrite, Fx.RootPid, @"C:\Windows\System32\drivers\evil.sys", 3, bytesOut: 4096),
         ]);
 
         var rules = Fx.RulesOf(snapshot);
         Assert.Contains("F-001", rules);
         Assert.Contains("F-005", rules);
         Assert.DoesNotContain("F-007", rules);
+    }
+
+    // ETW's FileIO/Create is create-or-open. These tests pin the resulting contract:
+    // a bare create is a touch, not a write, and only byte-backed creates or a
+    // following FileWrite may back a "write to a sensitive location" detection.
+    [Fact]
+    public void Bare_create_in_system32_is_not_a_system_write()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Windows\System32\PING.EXE", 2),
+            Fx.FileOp(EventKind.FileRead, Fx.RootPid, @"C:\Windows\System32\PING.EXE", 3),
+        ]);
+
+        Assert.Empty(snapshot.Detections);
+    }
+
+    [Fact]
+    public void Opening_a_system_binary_is_not_a_system_write()
+    {
+        // The live shape: cmd opens System32\PING.EXE to run it. ETW reports
+        // CreateDisposition=OPEN_EXISTING, which must never read as a system write.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Windows\System32\PING.EXE", 2, effect: FileEffect.Opened),
+            Fx.FileOp(EventKind.FileRead, Fx.RootPid, @"C:\Windows\System32\PING.EXE", 3),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Windows\System32\kernel32.dll", 4, effect: FileEffect.Opened),
+        ]);
+
+        Assert.Empty(snapshot.Detections);
+    }
+
+    [Fact]
+    public void Create_always_in_system32_is_a_system_write()
+    {
+        // The live shape of a drop: CREATE_ALWAYS, with no FileWrite event at all
+        // (a same-volume copy duplicates extents and emits no writes).
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Windows\System32\evil.dll", 2, effect: FileEffect.CreatedOrTruncated),
+        ]);
+
+        var f005 = snapshot.Detections.Where(d => d.RuleId == "F-005").ToList();
+        Assert.Single(f005);
+        Assert.Contains("evidence=create", f005[0].Factors);
+    }
+
+    [Fact]
+    public void Create_with_bytes_in_system32_is_a_system_write()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Windows\System32\evil.dll", 2, bytesOut: 8192),
+        ]);
+
+        Assert.Contains("F-005", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Create_then_write_in_system32_produces_one_detection()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Windows\System32\evil.dll", 2),
+            Fx.FileOp(EventKind.FileWrite, Fx.RootPid, @"C:\Windows\System32\evil.dll", 3, bytesOut: 8192),
+        ]);
+
+        var f005 = snapshot.Detections.Where(d => d.RuleId == "F-005").ToList();
+        Assert.Single(f005);
+        Assert.Contains("evidence=write", f005[0].Factors);
+    }
+
+    [Fact]
+    public void Deleting_from_a_system_location_is_a_system_write()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileDelete, Fx.RootPid, @"C:\Windows\System32\drivers\etc\hosts", 2),
+        ]);
+
+        Assert.Contains("F-005", Fx.RulesOf(snapshot));
     }
 
     [Fact]
@@ -104,10 +191,52 @@ public sealed class RuleTests
         var (snapshot, _) = Fx.Run(
         [
             Fx.RootStart(),
-            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\public\AppData\Local\Temp\stage2.exe", 2),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\public\AppData\Local\Temp\stage2.exe", 2, bytesOut: 53248),
         ]);
 
         Assert.Contains("F-007", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Opening_an_existing_executable_in_temp_is_not_a_drop()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\public\AppData\Local\Temp\stage2.exe", 2),
+        ]);
+
+        Assert.DoesNotContain("F-007", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Executable_written_to_temp_after_a_bare_create_is_flagged()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\public\AppData\Local\Temp\stage2.exe", 2),
+            Fx.FileOp(EventKind.FileWrite, Fx.RootPid, @"C:\Users\public\AppData\Local\Temp\stage2.exe", 3, bytesOut: 53248),
+        ]);
+
+        var f007 = snapshot.Detections.Where(d => d.RuleId == "F-007").ToList();
+        Assert.Single(f007);
+        Assert.Contains("modified", f007[0].Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Copy_style_drop_without_a_write_event_is_still_flagged()
+    {
+        // A same-volume copy emits a create (CREATE_ALWAYS) and no write at all, so
+        // gating a drop on FileWrite alone would hide the most common drop method.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\public\AppData\Local\Temp\stage2.exe", 2, effect: FileEffect.CreatedOrTruncated),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\public\AppData\Local\Temp\stage2.exe", 3, effect: FileEffect.Opened),
+        ]);
+
+        Assert.Single(snapshot.Detections, d => d.RuleId == "F-007");
     }
 
     [Fact]
@@ -152,7 +281,7 @@ public sealed class RuleTests
         var (snapshot, _) = Fx.Run(
         [
             Fx.RootStart(),
-            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2, bytesOut: 2048),
             Fx.NetConnect(Fx.RootPid, "203.0.113.7", 443, 8),
         ]);
 
@@ -166,7 +295,7 @@ public sealed class RuleTests
         var (snapshot, _) = Fx.Run(
         [
             Fx.RootStart(),
-            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2, bytesOut: 2048),
             Fx.NetConnect(Fx.RootPid, "203.0.113.7", 443, 180),
         ]);
 
@@ -179,11 +308,28 @@ public sealed class RuleTests
         var (snapshot, _) = Fx.Run(
         [
             Fx.RootStart(),
-            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2, bytesOut: 2048),
             Fx.NetConnect(Fx.RootPid, "10.0.0.5", 443, 8),
         ]);
 
         Assert.DoesNotContain("X-001", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Opening_a_persistence_file_without_writing_it_is_not_correlated()
+    {
+        // Reading an existing shortcut in the Startup folder is not a persistence write,
+        // even when an external connection follows: a bare create is create-or-open.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2),
+            Fx.NetConnect(Fx.RootPid, "203.0.113.7", 443, 8),
+        ]);
+
+        var rules = Fx.RulesOf(snapshot);
+        Assert.DoesNotContain("F-001", rules);
+        Assert.DoesNotContain("X-001", rules);
     }
 
     [Fact]
@@ -192,7 +338,7 @@ public sealed class RuleTests
         var (snapshot, _) = Fx.Run(
         [
             Fx.RootStart(),
-            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, Fx.StartupDir + @"\updater.lnk", 2, bytesOut: 2048),
             Fx.ProcessStart(5120, Fx.RootPid, "cmd.exe", @"C:\Windows\System32\cmd.exe", "cmd.exe /c whoami", 3),
             Fx.NetConnect(5120, "203.0.113.7", 4444, 5),
         ]);

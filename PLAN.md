@@ -639,9 +639,11 @@ Schema v1 + migrations, repositories, FTS, rollups, `BehaviorEvent` normaliser, 
 Kernel-Process collector (cmdline chain), Kernel-File collector (scope filter, drive-letter mapping, read sampling, fuse), Kernel-Network + `GetExtendedTcpTable` attribution repair, DNS collector, registry collector (optional), gap recorder, agent host with Kestrel + SSE + token/Origin guards, elevation bootstrap (`runas` relaunch, single instance mutex), `scripts/verify.ps1` checklist, `scripts/smoke.ps1` live check, first real session recorded to JSONL.
 **DoD (Windows):** monitoring `notepad.exe` and `7z.exe` yields a correct tree, real file events with resolved paths, real connections with owner PID; non-elevated start shows the elevation path, not a crash; recorded JSONL replays identically on Linux. Verified by `scripts/smoke.ps1`: self-test JSON, live notepad capture, non-empty recording, replay exit 0.
 
-### Phase 3 — Detection engine (4 d) — Linux ✅
+### Phase 3 — Detection engine (4 d) — in progress
 Correlator + window index, 22 rules with fixtures and reason templates, detection aggregation/escalation, risk scorer, score history, gap→confidence coupling, counterfactual generation, `RULES.md` generator.
 **DoD:** every rule has ≥2 fixtures; benign corpus fixtures produce 0 high-severity hits; `X-001`-style correlation proven by replay; score math matches a hand-computed table.
+
+**Progress:** the pipeline items (correlator, aggregation, scorer, counterfactuals) already exist from Phase 1; the remaining work is the rule catalogue. First item done: file-write evidence now distinguishes a create from an open via the sensor's create disposition (`FileEffect`), which removed the `F-005` false positive on every `System32` binary open. 7 of 22 rules shipped, 16 asserted fixtures. See `docs/HANDOFF.md` §12.
 
 ### Phase 4 — Dashboard v1 (6 d) — Linux ✅ (browser verified)
 All 8 screens against replay/SSE, virtualisation, timeline, threat panel with evidence chain, search, keyboard nav, empty/error/disconnected states, dark theme, responsive ≥ 1280 px.
