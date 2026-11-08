@@ -2,7 +2,7 @@
 
 Generated view: `dotnet run --project src/Argus.Cli -- rules` (add `--json` for machine output).
 
-This is **10 of the 22 rules** in `PLAN.md` §6.3. The rest land in the same contract — one rule,
+This is **10 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
 reason, counterfactual and at least two fixtures each.
 
 ## Shipped rules

@@ -87,7 +87,7 @@ the rules that must not be broken while continuing the work.
 - WebView2/dashboard (Phase 4).
 
 Current automated counts: **140 tests** (82 core, 47 analysis, 11 storage), **22/22** asserted
-replay scenarios, 10 shipped rules (`F-001`, `F-002`, `F-003`, `F-004`, `F-005`, `F-007`,
+replay scenarios, 10 of the 23 catalogued rules shipped (`F-001`, `F-002`, `F-003`, `F-004`, `F-005`, `F-007`,
 `N-001`, `P-002`, `P-003`, `X-001`).
 
 ## 4. Architecture and data flow
