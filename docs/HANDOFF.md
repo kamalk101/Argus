@@ -163,10 +163,109 @@ Relevant regression tests:
 - Run `dotnet test Argus.sln` and `dotnet run --project src/Argus.Cli -- replay
   tests/fixtures/scenarios --assert` after every rule or pipeline change.
 
-## 7. Immediate tasks, in order
+## 7. Phase 2.5 hardening — required before Phase 3
 
-Status after the 2026-11 verification pass: tasks 1-6 are complete except the parts listed
-under "Not yet verified" in §3. Task 7 (Phase 3) is next.
+Phase 2 is functionally proven, but `f074b6c` landed without tests and left a few sharp edges.
+Do every item here first. They are small, and they make the Phase 3 rule work trustworthy.
+
+### 7.1 Reconcile the three docs (do this first)
+
+`docs/HANDOFF.md` (this file) says file/network/DNS/API are verified, but `README.md` and
+`PLAN.md` still say they are pending:
+
+- `README.md:18` — "file/network/DNS volume, UAC and API/SSE checks pending"
+- `README.md:43-44` — "implemented but still need their own checks"
+- `PLAN.md:625` — "file/net/UAC/API ⏳"
+- `PLAN.md:613-614` — "still need their own Windows checks"
+
+Make both files match §3 exactly:
+
+- **verified:** ETW process capture, file capture, network + DNS capture, API guards
+  (401/403/400), SSE `state`/`stats`, non-elevated refusal (exit 3), `verify.ps1 -Smoke`;
+- **partial:** `--elevate` (child launch verified; the UAC consent click cannot be approved
+  on the unattended VM);
+- **unverified:** registry capture under real activity, event loss / volume fuse under load,
+  `7z.exe`, dashboard.
+
+Do not overclaim and do not delete limitations. Acceptance: the three files tell the same
+story; grep for `pending`, `still need` and `unverifiable` and check every hit.
+
+### 7.2 Lock the mapper contract with tests
+
+`f074b6c` removed the catch-all from `src/Argus.Core/Monitoring/EtwEventMapper.cs` but added
+no tests. Add to `tests/Argus.Core.Tests/MonitoringTests.cs`:
+
+1. A malformed/incomplete payload makes `Map` **throw** — it must not return `null`.
+2. A known-but-ignored record (`FileIO/Close`, `TcpIp/Send`, thread/config event) returns
+   `null`.
+3. A valid kernel process start still maps correctly after the `Source.Kernel` registration
+   change (image path, PID, parent PID, timestamp preserved).
+
+The `Unmapped`/`MappingFailures` counters live in `Argus.Monitor` (`net8.0-windows`) and no
+test project references it. Do **not** retarget the test projects; cover the counters through
+`--self-test` on the VM (§7.4). Acceptance: `dotnet test Argus.sln` green, 96 + new tests.
+
+### 7.3 Make the collector's per-record boundary total
+
+`src/Argus.Monitor/EtwCollector.cs` (~lines 197-200) catches only
+`InvalidOperationException`, `ArgumentException`, `NotSupportedException`, `FormatException`,
+`InvalidCastException`, `OverflowException`. The comment at `EtwEventMapper.cs:34-38` promises
+"the collector is the boundary that keeps a bad record from stopping collection", but a
+payload throwing `IndexOutOfRangeException` or `NullReferenceException` escapes the per-record
+catch and is not handled by the pump catch either. One bad record can stop delivery.
+
+Catch `Exception` around the map+emit block, increment `MappingFailures`, continue. Keep the
+pure mapper free of catch-alls — the throw is the contract, the collector is the boundary.
+A bounded sample of the last few exception messages in stats is fine; never log payloads.
+Acceptance: a malformed record cannot terminate the pump; re-run the §7.2 tests.
+
+### 7.4 Fix the ETW self-test race and strengthen `etw-delivery`
+
+`src/Argus.Agent/AgentSelfTest.cs`:
+
+- ~lines 64-66: `monitor.Start()` is followed immediately by `GenerateActivityAsync()`. ETW
+  needs 1-3 s to be consuming (this file says so). Add a 2 s delay between `Start()` and the
+  generated activity, keep the existing 2 s drain delay.
+- ~line 81: `var delivered = stats.EtwCallbacks > 0;` counts callbacks **before** filtering,
+  so rundown-only or all-filtered traffic still passes. Require `stats.EventsSeen > 0`
+  (mapped/forwarded) and warn when `stats.MappingFailures > 0`.
+- Prove the **generated** activity was seen, not just that some callback arrived: also require
+  `stats.ProcessStarts > 0` (or a file event). The probe runs against the agent's own PID as
+  root, so generated activity is in scope.
+
+Acceptance: `--self-test --json` passes three runs in a row with `EventsSeen > 0`,
+`ProcessStarts > 0` and a plausible `MappingFailures`.
+
+### 7.5 Stop silently dropping unresolvable file events
+
+`src/Argus.Core/Monitoring/EtwEventMapper.cs` (~lines 161-165): a file event whose path cannot
+be resolved returns `null`, which the collector counts as `Unmapped` (an ignored kind). That is
+lost evidence, not an uninteresting kind, and §2 says loss must be recorded.
+
+Either (a) return a `RawEvent` with `Observability.Partial` and no target, or (b) return
+`null` but add a `PathUnresolved` counter surfaced in self-test/session stats as a gap.
+Prefer (a) if downstream rules tolerate a null target. Acceptance: a file record with no
+`FileName`, no `OpenPath` and no cached FileKey produces a partial event or a recorded gap,
+not an `Unmapped` increment.
+
+### 7.6 Verify and report
+
+```powershell
+./scripts/verify.sh          # Linux: build, tests, 14 replay scenarios, selftest
+./scripts/verify.ps1         # Windows: build + tests
+./scripts/verify.ps1 -Smoke  # Windows elevated: self-test, notepad capture, replay
+```
+
+Report: exact commit, exact commands, test count before/after, self-test output (callbacks,
+events seen, process starts, mapping failures, unmapped), confirmation the three docs agree,
+and what is still unverified (registry, loss under load, UAC consent, 7z). Do not claim ETW
+works from compilation or replay alone.
+
+## 8. Immediate tasks, in order
+
+Status after the 2026-11 verification pass: Phase 2 tasks 1-6 are complete except the parts
+listed under "Not yet verified" in §3. **Phase 3 is blocked until §7 (Phase 2.5) is done.**
+After §7, start Phase 3.
 
 1. **Pull and verify.** — done (`git pull --ff-only` already up to date, `verify.ps1` green).
    ```powershell
@@ -205,8 +304,9 @@ under "Not yet verified" in §3. Task 7 (Phase 3) is next.
    this VM. Re-verify the parent handshake interactively, then tick this task.
 7. **Then start Phase 3**: the full 22-rule catalogue from `PLAN.md` §6.3, with fixtures,
    aggregation/escalation and correlated rules. Do not start the dashboard first.
+   **Blocked by §7 — finish the Phase 2.5 hardening first.**
 
-## 8. Commands
+## 9. Commands
 
 ```powershell
 # build + tests + replay + selftest
@@ -226,7 +326,7 @@ dotnet run --project src/Argus.Cli -- rules
 Live recordings are written under `%TEMP%\argus-smoke` by the smoke script. A recording can
 be replayed on Linux with the same `Argus.Cli replay` command.
 
-## 9. Pitfalls
+## 10. Pitfalls
 
 - `--assert` on a **live** recording is weak because `$meta.expect` is empty. Inspect the
   scope breakdown, event kinds and counts; do not treat exit 0 as proof of capture quality.
@@ -260,7 +360,7 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   not put the token in a URL or a world-readable file.
 - If you run tests on Linux, use `~/.dotnet/dotnet` if `dotnet` is not on `PATH`.
 
-## 10. Reporting discipline
+## 11. Reporting discipline
 
 Every handoff should state:
 
