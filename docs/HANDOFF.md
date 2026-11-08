@@ -56,13 +56,33 @@ the rules that must not be broken while continuing the work.
 - The replay exposed and fixed two scope bugs (see §5). After the fixes, only the root
   process is in scope and the recording is benign.
 - This confirms the ETW process path, JSONL format and Windows-to-Linux round trip.
+- Kernel records now decode after registering `Source.Kernel` (before that, every record was
+  `Task(<guid>)/Opcode(n)` and nothing was mapped). File capture measured: 1,235 events in one
+  session, 1,098 `fileCreate`, 55 `fileRead`, 78 `fileWrite`, 2 `fileDelete`, all with
+  drive-letter paths and correct owner PIDs, no `\Device\` leakage.
+- File capture end-to-end through the agent: 989 events for a powershell target that wrote to
+  `%TEMP%\argus-writes`, 922 `fileCreate`, 45 `fileRead`, 2 `fileWrite`, 2 `fileDelete`, all
+  PID-attributed, zero gaps, zero raw device paths.
+- Network + DNS end-to-end: a loopback listener plus four `.example.net` resolutions produced
+  1 `netConnect` (`127.0.0.1:45999`, `direct`) and 8 `dnsQuery` + 8 `dnsResponse` with hostnames,
+  `queryType 1/28` and NXDOMAIN-ish statuses, all on the target PID, `partial`
+  observability. DNS needed `Source.Dynamic` registration for payload fields.
+- Live API guards with a fixed token/port: `/api/health` 200 without token, `/api/sessions`
+  401 without token, bad `Origin` 403, bad `Host` 400, good token 200, and SSE
+  `/api/sessions/{id}/stream` delivered `state` and `stats` events.
+- `--self-test` inside an elevated agent: elevation, kernel provider, DNS provider, metadata
+  and TCP table all pass; the 2 s probe saw 551 callbacks and forwarded 142 in-scope events.
+- Non-elevated start without `--allow-non-elevated` exits 3 with the elevation message.
+- `scripts/verify.ps1 -Smoke` passes end-to-end (self-test, 15 s notepad capture, replay).
 
 ### Not yet verified
 
-- File, network, DNS and registry capture under real activity (notepad was idle).
+- Registry capture under real activity (writes were not exercised).
 - Event loss under load and the volume fuse on a busy machine.
-- UAC relaunch (`--elevate`) and the non-elevated refusal path.
-- Live API and SSE with the bearer token, Host/Origin guards.
+- `--elevate` was only verified as far as the child launch: the identical command line run
+  from an already-elevated shell starts, writes its ready file with `"elevated": true` and
+  records events. The UAC prompt itself cannot be approved on this unattended VM, so the
+  parent-side handshake (ready file -> JSON on stdout) has not been observed succeeding there.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
@@ -145,18 +165,22 @@ Relevant regression tests:
 
 ## 7. Immediate tasks, in order
 
-1. **Pull and verify.**
+Status after the 2026-11 verification pass: tasks 1-6 are complete except the parts listed
+under "Not yet verified" in §3. Task 7 (Phase 3) is next.
+
+1. **Pull and verify.** — done (`git pull --ff-only` already up to date, `verify.ps1` green).
    ```powershell
    git pull --ff-only origin main
    ./scripts/verify.ps1
    ```
-2. **Run the elevated smoke.**
+2. **Run the elevated smoke.** — done (passes; notepad is idle, so the live leg records only
+   the root `processStart`, which is expected).
    ```powershell
    ./scripts/verify.ps1 -Smoke
    ```
    If it fails, report the exact failed self-test check; do not summarise it as a generic
    failure.
-3. **Prove file capture.** Record a target that writes a file, e.g.:
+3. **Prove file capture.** — done (see §3). Original recipe, still valid:
    ```powershell
    dotnet run --project src/Argus.Agent -- `
      --target C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe `
@@ -167,16 +191,18 @@ Relevant regression tests:
    ```
    Confirm `FileCreate`/`FileWrite` events with resolved drive-letter paths (no
    `\Device\HarddiskVolume...`), and that only the target tree is in scope.
-4. **Prove network/DNS capture.** Use a target that resolves and connects after a short
+4. **Prove network/DNS capture.** — done (see §3). Recipe: use a target that resolves and connects after a short
    delay, or a loopback listener. Confirm `NetConnect`/`DnsQuery` events and owner PID.
-5. **Prove the API guards.** Start the agent with a fixed `--token` and `--port`, then check:
+5. **Prove the API guards.** — done (see §3). Recipe: start the agent with a fixed `--token` and `--port`, then check:
    - `/api/health` without token succeeds;
    - another `/api/...` route without token returns 401;
    - wrong `Origin` returns 403;
    - wrong `Host` returns 400;
    - SSE `/api/sessions/{id}/stream` delivers `state`/`stats`.
-6. **Prove UAC behaviour.** Non-elevated start must exit 3 with the elevation message;
-   `--elevate` must prompt and relaunch.
+6. **Prove UAC behaviour.** — partly done: non-elevated refusal exits 3 with the elevation
+   message; `--elevate` builds and launches the correct elevated child (verified by running the
+   same command line in an elevated shell), but the UAC consent click cannot be automated on
+   this VM. Re-verify the parent handshake interactively, then tick this task.
 7. **Then start Phase 3**: the full 22-rule catalogue from `PLAN.md` §6.3, with fixtures,
    aggregation/escalation and correlated rules. Do not start the dashboard first.
 
@@ -208,6 +234,23 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   starts; a target that exits immediately may be missed.
 - ETW is a machine-wide resource. Close Procmon, Sysmon traces, WPR or other kernel sessions
   if the agent reports a session conflict.
+- A named `TraceEventSession` needs an entry on `Source.Kernel` before records decode; without
+  it kernel records arrive as `Task(<guid>)/Opcode(n)` and match no mapper branch. Likewise a
+  manifest provider such as DNS-Client delivers no named payload fields (`QueryName`) until
+  `Source.Dynamic` has a handler. Both are one-line registrations in `EtwCollector`; removing
+  either silently returns 0 events for that source rather than an error.
+- `EtwStats.MappingFailures` means *payload decode failed*. Records Argus deliberately ignores
+  are counted in `EtwStats.Unmapped`. Do not fold the two together: a rising failure count is a
+  sensor bug, a rising unmapped count is normal.
+- DNS-Client reports the **requesting** PID on the 3006/3008 record, so DNS is attributable to a
+  scoped process without a payload PID. Events from the dnscache service (PID 1364 here) are
+  correctly out of scope.
+- ETW takes 1-3 s to become effective after `Start()`. A DNS or network probe fired in the first
+  second can show 0 events while the pipeline is fine; wait before generating test activity.
+- `--elevate` raises a real UAC consent prompt. On an unattended VM the prompt cannot be
+  approved, `Process.Start` either throws 1223 or returns a stub that exits `0x80008083`, and
+  pending `consent.exe` prompts block later elevation attempts until they time out (~2 min).
+  Verify the child launch itself from an already-elevated shell instead.
 - Do not reintroduce the timing-only orphan heuristic, directory-wide attribution for
   System32/Program Files, or ETW rundown as process starts.
 - Do not add `Microsoft.Diagnostics.Tracing.TraceEvent` to Core or Analysis.

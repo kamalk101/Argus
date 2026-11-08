@@ -52,8 +52,22 @@ public static class Elevation
 
             if (!File.Exists(readyFile))
             {
+                // Say what the child did, not just that nothing happened: "exited with 1"
+                // and "still running" need very different fixes.
+                var state = "still running";
+                try
+                {
+                    state = child.HasExited
+                        ? "exited with code " + child.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        : "still running";
+                }
+                catch (InvalidOperationException)
+                {
+                    state = "exited";
+                }
+
                 Console.Error.WriteLine(
-                    "argus-agent: the elevated process did not report readiness within 30 s. "
+                    "argus-agent: the elevated process did not report readiness within 30 s (child " + state + "). "
                     + "Run from an elevated PowerShell to see its console output.");
                 return 3;
             }

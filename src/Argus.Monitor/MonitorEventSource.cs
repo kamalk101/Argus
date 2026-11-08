@@ -319,7 +319,15 @@ public sealed class MonitorEventSource : IAsyncDisposable
         {
             _stats.EtwLostEvents = _etw.LostEvents;
             _etw.Dispose();
-            _stats.EtwError ??= _etw.PumpError;
+
+            // A pump that died (session closed underneath us, provider failure) used to
+            // be recorded only in stats. A session that stopped collecting silently is a
+            // monitoring gap and must be reported as one.
+            if (_etw.PumpError is { } pumpError)
+            {
+                _stats.EtwError ??= pumpError;
+                EmitGap("etw-pump-failed", pumpError);
+            }
         }
 
         foreach (var task in new[] { _processPoll, _tcpPoll })

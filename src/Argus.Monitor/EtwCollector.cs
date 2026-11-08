@@ -76,6 +76,14 @@ public sealed class EtwCollector : IDisposable
 
                 _session.EnableKernelProvider(keywords);
 
+                // A named session (anything other than the classic "NT Kernel Logger")
+                // does not decode kernel records by itself. Without a registered kernel
+                // parser every record arrives as "Task(<guid>)/Opcode(n)", which matches
+                // no mapper branch, so the session reports "started" while delivering
+                // nothing usable. Registering the parser is what turns those records into
+                // FileIO/Create, TcpIp/Connect, Registry/SetValue and so on.
+                _session.Source.Kernel.All += static _ => { };
+
                 if (_options.DnsEvents)
                 {
                     try
@@ -89,6 +97,11 @@ public sealed class EtwCollector : IDisposable
                         _stats.DnsError = dnsError;
                     }
                 }
+
+                // Manifest providers (DNS-Client) deliver no named payload fields until a
+                // dynamic parser decodes them; without this the DNS records arrive with an
+                // empty payload and map to nothing (QueryName would always be missing).
+                _session.Source.Dynamic.All += static _ => { };
 
                 _session.Source.AllEvents += OnAllEvents;
                 _pump = Task.Factory.StartNew(
@@ -130,14 +143,21 @@ public sealed class EtwCollector : IDisposable
             return;
         }
 
+        // Counted before any filtering: "no callbacks at all" (provider or session
+        // problem) and "every callback filtered" (configuration problem) are
+        // different failures and must not be reported as the same thing.
+        _stats.OnEtwCallback();
+
         var name = data.EventName;
         if (string.IsNullOrEmpty(name))
         {
+            _stats.OnEtwFiltered();
             return;
         }
 
         if (!IsEnabled(data, name))
         {
+            _stats.OnEtwFiltered();
             return;
         }
 
@@ -164,13 +184,17 @@ public sealed class EtwCollector : IDisposable
             var rawEvent = _mapper.Map(record, metadata);
             if (rawEvent is null)
             {
-                _stats.OnMappingFailure();
+                // A record the mapper deliberately ignores (FileIO/Close, TcpIp/Send,
+                // thread and system-config events) is not a failure. Reporting those as
+                // failures buried the real ones under six figures of noise.
+                _stats.OnUnmapped();
                 return;
             }
 
             _emit(rawEvent);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or NotSupportedException or FormatException)
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException
+            or NotSupportedException or FormatException or InvalidCastException or OverflowException)
         {
             _stats.OnMappingFailure();
         }

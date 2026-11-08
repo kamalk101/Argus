@@ -31,42 +31,38 @@ public sealed class EtwEventMapper
     {
         ArgumentNullException.ThrowIfNull(record);
 
-        try
+        // No catch-all here on purpose: a record this method cannot understand must be
+        // distinguishable from one it deliberately ignores, so the collector counts a
+        // malformed payload as a mapping failure and a known-but-uninteresting kind as
+        // simply unmapped. The collector is the boundary that keeps a bad record from
+        // stopping collection.
+        var name = record.EventName;
+        if (name.Contains("Process", StringComparison.OrdinalIgnoreCase))
         {
-            var name = record.EventName;
-            if (name.Contains("Process", StringComparison.OrdinalIgnoreCase))
-            {
-                return MapProcess(record, metadata, name);
-            }
-
-            if (name.Contains("FileIO", StringComparison.OrdinalIgnoreCase))
-            {
-                return MapFile(record, name);
-            }
-
-            if (name.Contains("TcpIp", StringComparison.OrdinalIgnoreCase))
-            {
-                return MapNetwork(record, name);
-            }
-
-            if (name.Contains("Registry", StringComparison.OrdinalIgnoreCase))
-            {
-                return MapRegistry(record, name);
-            }
-
-            if (IsDns(record))
-            {
-                return MapDns(record);
-            }
-
-            return null;
+            return MapProcess(record, metadata, name);
         }
-        catch (Exception exception) when (exception is FormatException or InvalidCastException or OverflowException or ArgumentException)
+
+        if (name.Contains("FileIO", StringComparison.OrdinalIgnoreCase))
         {
-            // A malformed payload must never stop collection. The record is
-            // dropped; the collector's loss counter makes that visible.
-            return null;
+            return MapFile(record, name);
         }
+
+        if (name.Contains("TcpIp", StringComparison.OrdinalIgnoreCase))
+        {
+            return MapNetwork(record, name);
+        }
+
+        if (name.Contains("Registry", StringComparison.OrdinalIgnoreCase))
+        {
+            return MapRegistry(record, name);
+        }
+
+        if (IsDns(record))
+        {
+            return MapDns(record);
+        }
+
+        return null;
     }
 
     private RawEvent? MapProcess(EtwRecord record, ProcessMetadata? metadata, string name)

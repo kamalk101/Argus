@@ -111,6 +111,17 @@ public sealed class SessionManager : IAsyncDisposable
                     FileName = targetPath,
                     UseShellExecute = false,
                     WorkingDirectory = Path.GetDirectoryName(targetPath) ?? Environment.CurrentDirectory,
+
+                    // The monitored application must not inherit the agent's console or
+                    // stdio handles. If it did, a target that outlives the agent keeps a
+                    // caller's captured stdout open and blocks whoever is reading it -
+                    // scripts/smoke.ps1 hung exactly that way. The target's own output is
+                    // not part of Argus's output, so it is drained and discarded, and
+                    // stdin is closed so a console target sees EOF instead of stealing
+                    // the agent's console input.
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                 };
 
                 if (!string.IsNullOrWhiteSpace(arguments))
@@ -120,6 +131,8 @@ public sealed class SessionManager : IAsyncDisposable
 
                 process = Process.Start(startInfo)
                     ?? throw new InvalidOperationException("Windows did not return a process for the target.");
+
+                DrainTargetStreams(process);
 
                 monitor = new MonitorEventSource(new MonitorOptions
                 {
@@ -207,6 +220,46 @@ public sealed class SessionManager : IAsyncDisposable
         _databases.Clear();
         _hub.Complete();
         _gate.Dispose();
+    }
+
+    /// <summary>
+    /// Closes the target's stdin and reads its stdout/stderr to exhaustion in the
+    /// background. Draining matters: a redirected pipe that nobody reads fills up and
+    /// would block a chatty target. Errors here are expected once the target exits and
+    /// are not surfaced as session failures.
+    /// </summary>
+    private static void DrainTargetStreams(Process process)
+    {
+        try
+        {
+            process.StandardInput.Close();
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ObjectDisposedException)
+        {
+            // The target exited before we could close its stdin.
+        }
+
+        Drain(process.StandardOutput);
+        Drain(process.StandardError);
+    }
+
+    private static void Drain(StreamReader reader)
+    {
+        _ = Task.Run(async () =>
+        {
+            var buffer = new char[4096];
+            try
+            {
+                while (await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false) > 0)
+                {
+                    // Deliberately discarded: target output is not agent output.
+                }
+            }
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException or InvalidOperationException)
+            {
+                // The target exited and its pipe was closed.
+            }
+        });
     }
 
     private static string? TryHash(string path)

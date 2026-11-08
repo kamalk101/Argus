@@ -63,6 +63,7 @@ public static class AgentSelfTest
         try
         {
             monitor.Start();
+            await GenerateActivityAsync().ConfigureAwait(false);
             await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
         finally
@@ -73,6 +74,16 @@ public static class AgentSelfTest
         var stats = monitor.Stats;
         checks.Add(("etw-kernel-provider", stats.EtwStarted,
             stats.EtwStarted ? "kernel process/file/network/registry keywords enabled" : stats.EtwError ?? "not started"));
+
+        // Delivery, not just enablement: a host can say "provider enabled" and still
+        // never hand the collector a record. The probe generates its own process and
+        // file activity so zero callbacks means a broken sensor, not an idle machine.
+        var delivered = stats.EtwCallbacks > 0;
+        checks.Add(("etw-delivery", delivered, delivered
+            ? string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{stats.EtwCallbacks} callback(s), {stats.EtwFiltered} filtered out, {stats.EventsSeen} mapped, {stats.Unmapped} unmapped, {stats.MappingFailures} failed")
+            : "ETW started but delivered no callbacks even with generated process/file activity"));
 
         if (!stats.DnsProviderEnabled)
         {
@@ -88,9 +99,11 @@ public static class AgentSelfTest
             checks.Add(("tcp-polling", false, "owner table poll failed"));
         }
 
-        if (stats.EtwStarted && stats.EventsSeen == 0)
+        if (stats.EtwStarted && stats.EtwCallbacks == 0)
         {
-            warnings.Add("ETW started but delivered no events in the 2 s window; this can be normal on an idle host.");
+            warnings.Add(stats.EtwError is null
+                ? "ETW delivered no callbacks at all; check for another kernel session (Procmon, Sysmon, WPR) or a stale Argus session."
+                : "ETW pump failed: " + stats.EtwError);
         }
 
         var passed = checks.All(check => check.Passed);
@@ -109,6 +122,8 @@ public static class AgentSelfTest
                 stats.TcpTableAvailable,
                 stats.EtwError,
                 stats.DnsError,
+                stats.EtwCallbacks,
+                stats.EtwFiltered,
                 stats.EventsSeen,
                 stats.EventsForwarded,
                 stats.OutsideScope,
@@ -118,6 +133,7 @@ public static class AgentSelfTest
                 stats.DnsEvents,
                 stats.RegistryEvents,
                 stats.MappingFailures,
+                stats.Unmapped,
                 stats.ChannelDropped,
                 stats.EtwLostEvents,
             },
@@ -151,5 +167,47 @@ public static class AgentSelfTest
         }
 
         return passed ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Produces two seconds of attributable process and file activity inside the
+    /// probe window. Everything here is benign and self-deleting; it exists so the
+    /// self-test can prove delivery rather than assume it.
+    /// </summary>
+    private static async Task GenerateActivityAsync()
+    {
+        try
+        {
+            var file = Path.Combine(Path.GetTempPath(), $"argus-selftest-{Guid.NewGuid():N}.tmp");
+            await File.WriteAllTextAsync(file, "argus self-test").ConfigureAwait(false);
+            File.Delete(file);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A failed probe write is not a sensor failure; the check below decides.
+        }
+
+        try
+        {
+            using var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                Arguments = "/c exit 0",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+
+            if (child is not null)
+            {
+                await child.WaitForExitAsync().ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // Same reasoning as above.
+        }
     }
 }

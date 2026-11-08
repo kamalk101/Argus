@@ -110,6 +110,27 @@ foreach ($warning in @($selfTest.warnings)) {
 
 Write-Host ''
 Write-Host "== 2/3 live capture: $Target for ${Seconds}s ==" -ForegroundColor Cyan
+
+function Hide-Secrets([string]$text) {
+    if ([string]::IsNullOrEmpty($text)) { return '' }
+    return ($text -replace '"token"\s*:\s*"[0-9A-Fa-f]+"', '"token":"<redacted>"')
+}
+
+function Quote-Argument([string]$value) {
+    if ($value -notmatch '[\s"]') { return $value }
+    return '"' + ($value -replace '(\\+)"', '$1$1\"') + '"'
+}
+
+# The agent is started through Start-Process with file redirection rather than the
+# pipeline. A piped capture blocks until every writer closes the pipe, and a
+# monitored application survives the agent (the smoke leaves it running for a
+# moment), so a pipeline here can hang even though the agent exited cleanly.
+$agentOut = Join-Path $OutputDir 'agent.out'
+$agentErr = Join-Path $OutputDir 'agent.err'
+foreach ($file in @($agentOut, $agentErr)) {
+    if (Test-Path $file) { Remove-Item -Force $file }
+}
+
 $agentArgs = @(
     'run', '--project', 'src/Argus.Agent', '-v', 'q', '--no-build', '--',
     '--target', $Target,
@@ -118,12 +139,54 @@ $agentArgs = @(
     '--record', $record,
     '--ready-file', $readyFile,
     '--port', '0'
-)
-& $dotnet @agentArgs
-$agentExit = $LASTEXITCODE
-if ($agentExit -ne 0) {
-    throw "live agent exited with $agentExit; see the message above."
+) | ForEach-Object { Quote-Argument $_ }
+
+# cmd.exe owns the redirection and the exit code: Start-Process' Process object can
+# report an empty ExitCode, while a monitored app may outlive the agent and hold open
+# inherited handles. cmd exits when the agent exits and leaves the code on disk.
+$agentExitFile = Join-Path $OutputDir 'agent.exit'
+if (Test-Path $agentExitFile) { Remove-Item -Force $agentExitFile }
+$inner = '"' + $dotnet + '" ' + ($agentArgs -join ' ') +
+    ' > "' + $agentOut + '" 2> "' + $agentErr + '"' +
+    ' & if errorlevel 1 (echo 1 > "' + $agentExitFile + '") else (echo 0 > "' + $agentExitFile + '")'
+
+$agent = Start-Process -FilePath $env:ComSpec -ArgumentList ('/d /s /c "' + $inner + '"') -NoNewWindow -PassThru
+
+# Hard timeout: an agent that waits on a monitored app must fail loudly, not hang CI.
+# Process.WaitForExit is deliberately avoided: with redirected stdio it can fail to
+# notice exit while any descendant still holds a handle.
+$timeoutMs = ([Math]::Max($Seconds, 5) + 120) * 1000
+$deadline = (Get-Date).AddMilliseconds($timeoutMs)
+while (-not $agent.HasExited -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 250
 }
+
+if (-not $agent.HasExited) {
+    try { $agent.Kill() } catch { }
+    $tail = Hide-Secrets((Get-Content -Raw -ErrorAction SilentlyContinue $agentOut))
+    if ($tail) { Write-Host $tail }
+    throw "live agent did not exit within $([int]($timeoutMs / 1000)) s; it was killed."
+}
+
+$agentExit = 0
+if (Test-Path $agentExitFile) {
+    $agentExit = [int]((Get-Content -Raw $agentExitFile).Trim())
+}
+else {
+    throw "live agent finished without recording an exit code; see $OutputDir."
+}
+if ($agentExit -ne 0) {
+    foreach ($file in @($agentOut, $agentErr)) {
+        if (Test-Path $file) {
+            $text = Hide-Secrets((Get-Content -Raw -ErrorAction SilentlyContinue $file))
+            if (-not [string]::IsNullOrWhiteSpace($text)) { Write-Host $text.Trim() }
+        }
+    }
+
+    throw "live agent exited with $agentExit; its output is shown above (token redacted)."
+}
+
+Remove-Item -Force -ErrorAction SilentlyContinue $agentOut, $agentErr
 
 if (-not (Test-Path $readyFile)) { throw "agent did not write the ready file: $readyFile" }
 $ready = Get-Content -Raw $readyFile | ConvertFrom-Json

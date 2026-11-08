@@ -36,6 +36,8 @@ public sealed record MonitorOptions
 
 public sealed class MonitorStats
 {
+    private long _etwCallbacks;
+    private long _etwFiltered;
     private long _eventsSeen;
     private long _eventsForwarded;
     private long _outsideScope;
@@ -43,11 +45,18 @@ public sealed class MonitorStats
     private long _throttledEvents;
     private long _channelDropped;
     private long _mappingFailures;
+    private long _unmapped;
     private long _processStarts;
     private long _fileEvents;
     private long _networkEvents;
     private long _dnsEvents;
     private long _registryEvents;
+
+    /// <summary>Raw ETW callbacks received, before the collector's own filtering.</summary>
+    public long EtwCallbacks => Interlocked.Read(ref _etwCallbacks);
+
+    /// <summary>Callbacks the collector dropped as not interesting (rundown, disabled category).</summary>
+    public long EtwFiltered => Interlocked.Read(ref _etwFiltered);
 
     public long EventsSeen => Interlocked.Read(ref _eventsSeen);
     public long EventsForwarded => Interlocked.Read(ref _eventsForwarded);
@@ -55,7 +64,11 @@ public sealed class MonitorStats
     public long SampledReads => Interlocked.Read(ref _sampledReads);
     public long ThrottledEvents => Interlocked.Read(ref _throttledEvents);
     public long ChannelDropped => Interlocked.Read(ref _channelDropped);
+    /// <summary>Records with a malformed payload: a real sensor-side failure.</summary>
     public long MappingFailures => Interlocked.Read(ref _mappingFailures);
+
+    /// <summary>Records the mapper deliberately ignores (kinds Argus does not model).</summary>
+    public long Unmapped => Interlocked.Read(ref _unmapped);
     public long ProcessStarts => Interlocked.Read(ref _processStarts);
     public long FileEvents => Interlocked.Read(ref _fileEvents);
     public long NetworkEvents => Interlocked.Read(ref _networkEvents);
@@ -71,6 +84,10 @@ public sealed class MonitorStats
 
     public void OnSeen() => Interlocked.Increment(ref _eventsSeen);
 
+    public void OnEtwCallback() => Interlocked.Increment(ref _etwCallbacks);
+
+    public void OnEtwFiltered() => Interlocked.Increment(ref _etwFiltered);
+
     public void OnForwarded()
     {
         Interlocked.Increment(ref _eventsForwarded);
@@ -85,6 +102,8 @@ public sealed class MonitorStats
     public void OnChannelDropped() => Interlocked.Increment(ref _channelDropped);
 
     public void OnMappingFailure() => Interlocked.Increment(ref _mappingFailures);
+
+    public void OnUnmapped() => Interlocked.Increment(ref _unmapped);
 
     public void OnProcessStart() => Interlocked.Increment(ref _processStarts);
 
