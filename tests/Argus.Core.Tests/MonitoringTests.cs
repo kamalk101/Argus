@@ -169,7 +169,7 @@ public sealed class MonitoringTests
     }
 
     [Fact]
-    public void Rename_records_new_target_and_old_path_detail()
+    public void Rename_records_new_target_and_old_path()
     {
         var mapper = new EtwEventMapper();
         var record = Record("FileIORename", 19, 5000, ("FileName", @"C:\temp\a.tmp"), ("FileName2", @"C:\temp\b.exe"));
@@ -179,7 +179,43 @@ public sealed class MonitoringTests
         Assert.NotNull(raw);
         Assert.Equal(EventKind.FileRename, raw.Kind);
         Assert.Equal(@"C:\temp\b.exe", raw.Target);
-        Assert.Contains(@"C:\\temp\\a.tmp", raw.Detail, StringComparison.Ordinal);
+
+        // Both halves are contract fields: a rule has to compare the old and the new name,
+        // and a fact that only exists in a JSON blob is not something rules can use.
+        Assert.Equal(@"C:\temp\a.tmp", raw.PreviousPath);
+        Assert.Equal(Observability.Direct, raw.Observability);
+    }
+
+    [Fact]
+    public void Rename_source_and_destination_records_are_paired()
+    {
+        // Live shape: FileIO/Rename carries the source, FileIo/RenamePath the destination,
+        // both with the same FileKey. Two records, one rename.
+        var mapper = new EtwEventMapper();
+        var source = Record("FileIORename", 19, 5000, ("FileName", @"C:\docs\report.docx"), ("FileKey", 77UL));
+        var destination = Record("FileIoRenamePath", 19, 5000, ("FileName", @"C:\docs\report.docx.locked"), ("FileKey", 77UL));
+
+        var first = mapper.Map(source);
+        var second = mapper.Map(destination);
+
+        Assert.Null(first);
+        Assert.NotNull(second);
+        Assert.Equal(EventKind.FileRename, second.Kind);
+        Assert.Equal(@"C:\docs\report.docx.locked", second.Target);
+        Assert.Equal(@"C:\docs\report.docx", second.PreviousPath);
+        Assert.Equal(Observability.Direct, second.Observability);
+    }
+
+    [Fact]
+    public void Rename_destination_without_a_source_is_partial()
+    {
+        var mapper = new EtwEventMapper();
+        var raw = mapper.Map(Record("FileIoRenamePath", 19, 5000, ("FileName", @"C:\docs\x.docx.locked"), ("FileKey", 99UL)));
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.FileRename, raw.Kind);
+        Assert.Null(raw.PreviousPath);
+        Assert.Equal(Observability.Partial, raw.Observability);
     }
 
     [Fact]

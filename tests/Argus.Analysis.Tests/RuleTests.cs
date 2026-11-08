@@ -505,6 +505,65 @@ public sealed class RuleTests
     }
 
     [Fact]
+    public void Marker_rename_burst_across_directories_is_flagged()
+    {
+        var events = new List<Core.Events.RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.MarkerRenames(20, seconds: 1, span: 30, directories: 8));
+
+        var (snapshot, r) = Fx.Run(events, risk: null);
+
+        var f006 = snapshot.Detections.Single(d => d.RuleId == "F-006");
+        Assert.Equal(2, f006.EventCount);
+
+        // Factors describe the latest crossing (20 renames), not the first.
+        Assert.Contains("marker_renames_in_window=20", f006.Factors);
+        Assert.Contains("distinct_directories=8", f006.Factors);
+        Assert.Contains("appended_suffix=locked", f006.Factors);
+
+        _ = r;
+    }
+
+    [Fact]
+    public void Renaming_inside_one_directory_is_not_the_ransomware_shape()
+    {
+        // A batch renamer or an unpacker works in one folder. Breadth is part of the shape.
+        var events = new List<Core.Events.RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.MarkerRenames(30, seconds: 1, span: 20, directories: 1));
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("F-006", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Finishing_a_download_is_not_a_marker_rename()
+    {
+        // "movie.mp4.part" -> "movie.mp4" removes an intermediate extension. It is the
+        // commonest extension change on a desktop and must never count.
+        var events = new List<Core.Events.RawEvent> { Fx.RootStart() };
+        for (var i = 0; i < 30; i++)
+        {
+            var root = $@"C:\argus-test\downloads\d{i % 8}\";
+            events.Add(Fx.Rename(Fx.RootPid, root + $"file{i}.mp4.part", root + $"file{i}.mp4", 1 + i));
+        }
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("F-006", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Rename_below_the_threshold_is_not_flagged()
+    {
+        var events = new List<Core.Events.RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.MarkerRenames(9, seconds: 1, span: 10, directories: 8));
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("F-006", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
     public void Mass_file_creation_is_flagged_once_per_threshold()
     {
         var events = new List<Core.Events.RawEvent> { Fx.RootStart() };

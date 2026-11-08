@@ -58,6 +58,9 @@ public sealed record BehaviorEvent
     /// <summary>What the file operation did, when the sensor could tell (see <see cref="FileEffect"/>).</summary>
     public FileEffect? FileEffect { get; init; }
 
+    /// <summary>Source path of a <see cref="EventKind.FileRename"/>; null when the sensor could not pair it.</summary>
+    public string? PreviousPath { get; init; }
+
     /// <summary>Kind-specific extras as JSON; never the only place a fact lives.</summary>
     public string? Detail { get; init; }
 

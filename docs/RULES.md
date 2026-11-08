@@ -2,7 +2,7 @@
 
 Generated view: `dotnet run --project src/Argus.Cli -- rules` (add `--json` for machine output).
 
-This is **10 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
+This is **11 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
 reason, counterfactual and at least two fixtures each.
 
 ## Shipped rules
@@ -16,6 +16,7 @@ reason, counterfactual and at least two fixtures each.
 | F-003 | Scheduled task created | 70 | process | T1053.005 | per-event |
 | F-004 | Mass file creation | 55 | file | T1105, T1486 | aggregated (60 s) |
 | F-005 | Write to a system location | 65 | file | T1543, T1574 | per-event |
+| F-006 | Destructive rename burst (ransomware shape) | 85 | file | T1486 | aggregated (60 s) |
 | F-007 | Executable payload dropped in a writable location | 50 | file | T1105 | per-event |
 | N-001 | Connection to a risky service port | 45 | network | T1021 | per-event |
 | X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated (60 s) |
@@ -28,11 +29,29 @@ scheduled-task registration, and it is a process-channel rule because the task f
 written by the Task Scheduler service, which is out of scope — only the tool launch is in-scope
 evidence.
 
+### F-006: what it counts, and what it cannot see
+
+`F-006` counts a *pattern*, not an intensity: renames where the new name starts with the old one
+and adds something (`report.docx` → `report.docx.locked`), spread over at least 5 directories, at
+least 10 of them in 60 s, firing once per 10-rename crossing. A build, an unzip or a batch renamer
+either keeps the extension or works inside one folder, so breadth plus an appended marker is the
+signal. Renames that merely drop an intermediate extension (`.part`, `.crdownload`, `.tmp`) are
+never counted: finishing a download looks identical otherwise.
+
+**The delete half of this rule does not exist, because the sensor cannot see deletions.** Measured
+live: 26 files deleted by `del` produced **zero** file events — the kernel `FileIO` subscription
+used here reports creates, writes, reads and renames, but not `del`/`DeleteFile`. So a wiper that
+only deletes is invisible to `F-006` and to the whole pipeline; `F-006` keys on the
+rewrite-then-rename shape encryptors leave behind. Never present a quiet `F-006` as evidence that
+nothing was destroyed, and do not "fix" this by treating a create as a delete. Closing the gap
+needs a different sensor (a minifilter or `FileIO/SetInfo` with `FileDispositionInformation`), and
+it is recorded as an open item in `docs/HANDOFF.md` §10.
+
 ### Thresholds and volume
 
-`F-004` counts content-changing creates in a 60 s window from the correlation index and fires once
-per threshold crossing (200, 400, 600 …), so one detection represents one escalation step instead
-of 200 duplicate findings. Bursts of writes to existing files and bursts of opens do not count —
+`F-004` and `F-006` count events in a 60 s window from the correlation index and fire once per
+threshold crossing (200, 400, 600 … creates; 10, 20, 30 … renames), so one detection represents one
+escalation step instead of hundreds of duplicate findings. Bursts of writes to existing files and bursts of opens do not count —
 a compiler or a scanner must stay quiet. Thresholds are constants in the rule class today;
 `rules.json` binding is still open.
 

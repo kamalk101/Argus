@@ -18,6 +18,11 @@ public sealed class EtwEventMapper
 
     private readonly Func<string, string> _resolvePath;
     private readonly Dictionary<ulong, string> _fileKeys = [];
+
+    /// <summary>Source path of a rename seen but not yet paired with its destination.</summary>
+    private readonly Dictionary<(int Pid, ulong Key), string> _renames = [];
+
+    private const int MaxPendingRenames = 4096;
     private readonly Dictionary<(int Pid, ulong Handle), string> _registryKeys = [];
 
     private const int MaxRegistryKeys = 20_000;
@@ -126,34 +131,7 @@ public sealed class EtwEventMapper
 
         if (kind == EventKind.FileRename)
         {
-            var oldPath = Resolve(FirstString(record, "FileName", "OldName", "Path"));
-            var newPath = Resolve(FirstString(record, "FileName2", "NewName"));
-            if (string.IsNullOrEmpty(newPath))
-            {
-                newPath = oldPath;
-            }
-
-            if (string.IsNullOrEmpty(newPath))
-            {
-                // A rename whose paths cannot be resolved is lost evidence, not an
-                // uninteresting kind: it must reach the session so the gap is visible.
-                return UnresolvedPathEvent(record, EventKind.FileRename, null);
-            }
-
-            return new RawEvent
-            {
-                Ts = record.TimestampUtc,
-                Kind = EventKind.FileRename,
-                Pid = record.Pid,
-                Tid = record.Tid,
-                Target = newPath,
-                Detail = JsonSerializer.Serialize(new Dictionary<string, string?>
-                {
-                    ["oldPath"] = string.IsNullOrEmpty(oldPath) ? null : oldPath,
-                }),
-                Observability = Observability.Direct,
-                Source = EventSourceKind.Etw,
-            };
+            return MapRename(record, name);
         }
 
         var fileKey = FirstUInt64(record, "FileKey");
@@ -304,6 +282,95 @@ public sealed class EtwEventMapper
             Observability = Observability.Partial,
             Source = EventSourceKind.Etw,
         };
+    }
+
+    /// <summary>
+    /// A rename arrives as two records: <c>FileIO/Rename</c> carrying the source path and
+    /// <c>FileIo/RenamePath</c> carrying the destination. Neither is a rename on its own.
+    ///
+    /// The old mapping treated each record as a complete rename and filled the missing side
+    /// with the present one, so one <c>ren a.docx b.locked</c> produced two events:
+    /// <c>a.docx -> a.docx</c> and <c>b.locked -> b.locked</c>. Both are false: the first
+    /// says a file was replaced by itself and the second loses the name it came from, which
+    /// is the whole signal F-006 needs. They are now paired by (pid, file key) and one event
+    /// is emitted from the destination record.
+    /// </summary>
+    private RawEvent? MapRename(EtwRecord record, string name)
+    {
+        var path = Resolve(FirstString(record, "FileName", "OldName", "Path"));
+        var isDestination = name.Contains("RenamePath", StringComparison.OrdinalIgnoreCase);
+        var key = RenameKey(record);
+
+        // Some providers put both names in one record. Then there is nothing to pair.
+        var paired = Resolve(FirstString(record, "FileName2", "NewName"));
+        if (!isDestination && !string.IsNullOrEmpty(paired))
+        {
+            return RenameEvent(record, paired, path);
+        }
+
+        if (!isDestination)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                // Nothing to hold on to and nothing to pair it with: report the loss as
+                // partial evidence rather than dropping the record.
+                return UnresolvedPathEvent(record, EventKind.FileRename, null);
+            }
+
+            RememberRename(key, path);
+
+            // The source half is held, not emitted: it is not a rename yet.
+            return null;
+        }
+
+        var source = TakeRename(key);
+
+        if (string.IsNullOrEmpty(path))
+        {
+            return UnresolvedPathEvent(record, EventKind.FileRename, null);
+        }
+
+        return RenameEvent(record, path, source);
+    }
+
+    private static RawEvent RenameEvent(EtwRecord record, string target, string? source) => new()
+    {
+        Ts = record.TimestampUtc,
+        Kind = EventKind.FileRename,
+        Pid = record.Pid,
+        Tid = record.Tid,
+        Target = target,
+        PreviousPath = source,
+
+        // Without the source record the event still happened; it just cannot say what was
+        // moved, so it is partial evidence rather than a silent gap.
+        Observability = source is null ? Observability.Partial : Observability.Direct,
+        Source = EventSourceKind.Etw,
+    };
+
+    private static (int Pid, ulong Key) RenameKey(EtwRecord record) =>
+        (record.Pid, FirstUInt64(record, "FileKey") ?? 0);
+
+    private void RememberRename((int Pid, ulong Key) key, string path)
+    {
+        if (_renames.Count >= MaxPendingRenames)
+        {
+            // A pending source with no destination is a lost pair, not something to keep.
+            var oldest = _renames.Keys.First();
+            _renames.Remove(oldest);
+        }
+
+        _renames[key] = path;
+    }
+
+    private string? TakeRename((int Pid, ulong Key) key)
+    {
+        if (!_renames.Remove(key, out var source))
+        {
+            return null;
+        }
+
+        return source;
     }
 
     private static EventKind? KindOfFileEvent(string name)

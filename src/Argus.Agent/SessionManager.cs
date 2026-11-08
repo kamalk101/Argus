@@ -156,12 +156,15 @@ public sealed class SessionManager : IAsyncDisposable
                 process = Process.Start(startInfo)
                     ?? throw new InvalidOperationException("Windows did not return a process for the target.");
 
-                DrainTargetStreams(process);
-
+                // Attach before anything else: until the root is known the monitor holds
+                // events rather than attributing them, and this is the only window where that
+                // matters.
                 if (!monitor.AttachRoot(process.Id, targetPath, LaunchTimeOf(process) ?? DateTimeOffset.UtcNow))
                 {
                     throw new InvalidOperationException("The monitor already had a root process.");
                 }
+
+                DrainTargetStreams(process);
 
                 var session = new LiveSession(
                     id,

@@ -50,6 +50,7 @@ public sealed class MonitorStats
     private long _sampledReads;
     private long _throttledEvents;
     private long _channelDropped;
+    private long _droppedBeforeRoot;
     private long _mappingFailures;
     private long _unmapped;
     private long _processStarts;
@@ -74,6 +75,9 @@ public sealed class MonitorStats
     public long SampledReads => Interlocked.Read(ref _sampledReads);
     public long ThrottledEvents => Interlocked.Read(ref _throttledEvents);
     public long ChannelDropped => Interlocked.Read(ref _channelDropped);
+
+    /// <summary>Events dropped because they arrived before the root process was known.</summary>
+    public long DroppedBeforeRoot => Interlocked.Read(ref _droppedBeforeRoot);
     /// <summary>Records with a malformed payload: a real sensor-side failure.</summary>
     public long MappingFailures => Interlocked.Read(ref _mappingFailures);
 
@@ -127,6 +131,8 @@ public sealed class MonitorStats
     public void OnThrottled() => Interlocked.Increment(ref _throttledEvents);
 
     public void OnChannelDropped() => Interlocked.Increment(ref _channelDropped);
+
+    public void OnDroppedBeforeRoot() => Interlocked.Increment(ref _droppedBeforeRoot);
 
     public void OnMappingFailure(string? sample = null)
     {

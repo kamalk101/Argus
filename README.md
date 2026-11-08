@@ -16,7 +16,7 @@ malicious. It does not scan a file and print a verdict.
 | 0 | Solution, event contract, docs, scripts | **done** (Linux-verified) |
 | 1 | Core model, scope tracking, scoring, SQLite, replay harness, fixtures | **done** (Linux-verified) |
 | 2 | ETW collectors + elevated agent host | **done on Windows** for process, file, network+DNS capture and the API guards; `--elevate` UAC consent click unverified (unattended VM), registry volume and loss under load unverified |
-| 3 | Full 22-rule catalogue + correlation | **in progress**; 10 of the 23 catalogued rules shipped and verified live (persistence, system write, payload drop, mass file creation, unexpected shell, encoded interpreter, risky port, persistence-then-network) |
+| 3 | Full 22-rule catalogue + correlation | **in progress**; 11 of the 23 catalogued rules shipped and verified live (persistence, system write, payload drop, mass file creation, ransomware-shaped rename burst, unexpected shell, encoded interpreter, risky port, persistence-then-network) |
 | 4 | Dashboard (8 screens) | not started |
 | 5 | Windows end-to-end, reports, tuning | not started |
 | 6 | ML advisory layer | not started |
@@ -24,7 +24,7 @@ malicious. It does not scan a file and print a verdict.
 
 Full plan and phase acceptance criteria: [`PLAN.md`](PLAN.md).
 
-**What is verified today:** 143 unit tests (85 core, 47 analysis, 11 storage), 22 recorded
+**What is verified today:** 149 unit tests (87 core, 51 analysis, 11 storage), 24 recorded
 scenarios replaying through the real pipeline with asserted verdicts, SQLite persistence and
 FTS search round-trip, and live ETW sessions on Windows that produced real `F-002`, `F-003`,
 `F-004` and `F-007` detections from a benign probe. The Windows projects (`Argus.Monitor`, `Argus.Agent`)

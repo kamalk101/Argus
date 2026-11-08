@@ -86,9 +86,9 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **143 tests** (85 core, 47 analysis, 11 storage), **22/22** asserted
-replay scenarios, 10 of the 23 catalogued rules shipped (`F-001`, `F-002`, `F-003`, `F-004`, `F-005`, `F-007`,
-`N-001`, `P-002`, `P-003`, `X-001`).
+Current automated counts: **149 tests** (87 core, 51 analysis, 11 storage), **24/24** asserted
+replay scenarios, 11 of the 23 catalogued rules shipped (`F-001` … `F-007`, `N-001`, `P-002`,
+`P-003`, `X-001`).
 
 ## 4. Architecture and data flow
 
@@ -471,6 +471,26 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   scope check, so unrelated system file activity pushed it to 10 675 events/s and reported a
   `volume-throttle` gap in a session whose own target was doing very little (which also marked a
   clean run `incomplete`). Machine-wide volume is not the session's volume.
+- **Deletions are invisible to this sensor.** `del`/`DeleteFile` produces no file event at all:
+  a live probe deleted 26 files and recorded **zero** `fileDelete` events, while the same probe's
+  renames and writes were all present. The kernel `FileIO` subscription reports create, write, read
+  and rename, not delete. `F-006` is built on the rewrite-then-rename shape for exactly this
+  reason, and a delete-only wiper is undetected. Closing this needs another sensor (minifilter, or
+  `FileIO/SetInfo` with `FileDispositionInformation`) — do not paper over it with a rule.
+- **`HasRoot` decides whether events are forwarded at all.** Events are buffered while it is
+  false, so every path that names a root must flip it — `SeedRoot` does, for both orderings.
+  Leaving it to `AttachRoot` alone made the legacy path (root supplied up front) buffer forever;
+  `--self-test` caught it with "mapped but none of the generated process activity was seen". If a
+  session records only its root event, check this first.
+- **A rename is two records, not one.** `FileIO/Rename` carries the source path and
+  `FileIo/RenamePath` the destination, both with the same `FileKey`. The old mapper treated each as
+  a whole rename and filled the missing side with the present one, so `ren a.docx b.locked` became
+  `a.docx → a.docx` plus `b.locked → b.locked`. They are now paired by `(pid, FileKey)` and one
+  event is emitted with `PreviousPath` + `Target`; an unpaired destination is `Partial`.
+- **A ~20 ms target can still lose everything, just later.** ETW delivered the records of a tree
+  that lived ~20 ms after more than 600 ms of quiet, so an early drain floor lost them. The
+  post-exit floor is now 1.5 s (ceiling 3 s). Measured before/after on the same probe: 1 event
+  before, 19 after.
 - **The scope tracker is shared.** `Observe`/`ClassifyPid` are called from the ETW pump and both
   repair pollers, and the root can now be attached from the launch thread while those run, so the
   pid table is behind a lock. Do not add unlocked state to it.
@@ -617,7 +637,34 @@ with 0 mapping failures; `verify.ps1` passes (tests + 22 fixtures + smoke). Test
 47 analysis, 11 storage), with three new scope tests covering the no-root window, late attach and
 double attach.
 
-### 12.5 Next in Phase 3
+### 12.5 F-006: ransomware-shaped rename burst — done
+
+Three things had to be true before this rule could exist, and only the first was.
+
+1. **Renames had to be one event, not two.** Live, `ren a.docx a.docx.locked` arrived as
+   `FileIO/Rename` (source) and `FileIo/RenamePath` (destination). The mapper treated each as a
+   complete rename and filled the missing side with the present one, producing `a.docx → a.docx`
+   and `b.locked → b.locked` — 24 events for 12 renames, none of them usable. The two records are
+   now paired by `(pid, FileKey)`, and the source path is a contract field (`PreviousPath` on
+   `RawEvent`/`BehaviorEvent`) instead of a JSON blob, because a rule has to compare the old and
+   the new name. Unpaired destinations stay as `Partial` evidence.
+2. **Deletions are not observable.** The plan's F-006 says "delete/overwrite burst". Measured: 26
+   `del`s produced **zero** file events — the kernel `FileIO` subscription has no delete. So the
+   rule is built on what the sensor actually reports: rewrites plus marker-appending renames.
+   This is recorded as a sensor gap in §10 and in `docs/RULES.md`, not smoothed over.
+3. **Short-lived targets still lost their events.** A ~20 ms `cmd` tree delivered its records
+   later than 600 ms of quiet, so the drain floor added in `560b64a` was not enough; the post-exit
+   floor is 1.5 s now (1 event before, 19 after on the same probe).
+
+The rule itself: marker-appending renames (new name starts with the old one, at least 10 in 60 s)
+spread over 5+ directories, firing per 10-rename crossing. Download completion (`.part` →
+final) is excluded because it is the commonest extension change on a desktop. Verified live:
+a probe renaming 12 files across 8 directories produced `F-006` at 20.5 Suspicious with 0 gaps,
+and replay of the same recording reproduces it. New fixtures 23 (`rename-burst-ransomware`,
+fires) and 24 (`bulk-rename-benign`: 60 in-folder renames with the extension kept plus 12 finished
+downloads, quiet). Tests: 149 (87 core, 51 analysis, 11 storage); 24/24 fixtures.
+
+### 12.6 Next in Phase 3
 
 The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
 aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use

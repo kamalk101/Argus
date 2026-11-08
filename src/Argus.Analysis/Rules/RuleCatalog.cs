@@ -51,6 +51,7 @@ public sealed class RuleCatalog
             new AutostartKeyRule(),
             new ScheduledTaskRule(),
             new MassFileCreationRule(),
+            new DestructiveRenameBurstRule(),
             new RiskyPortRule(),
         ];
 

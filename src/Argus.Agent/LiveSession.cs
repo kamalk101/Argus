@@ -23,6 +23,15 @@ public sealed class LiveSession : IAsyncDisposable
 {
     private static readonly TimeSpan BatchDelay = TimeSpan.FromMilliseconds(250);
 
+    /// <summary>
+    /// Minimum time to keep collecting after the root process exits.
+    ///
+    /// Measured on the VM: a tree that lives ~20 ms can have its records delivered later than
+    /// 600 ms, and a 20 ms probe that renamed a file recorded nothing at all. Waiting longer
+    /// is cheap and the alternative is a silently empty session.
+    /// </summary>
+    private static readonly TimeSpan PostExitDrainFloor = TimeSpan.FromMilliseconds(1500);
+
     /// <summary>How long the pump may take to persist what is queued when the session stops.</summary>
     private static readonly TimeSpan DrainPumpTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ScoreSampleInterval = TimeSpan.FromSeconds(1);
@@ -464,9 +473,9 @@ public sealed class LiveSession : IAsyncDisposable
         {
             await _monitor
                 .DrainAsync(
-                    TimeSpan.FromMilliseconds(200),
-                    TimeSpan.FromSeconds(2),
-                    minimumWait: TimeSpan.FromMilliseconds(600))
+                    TimeSpan.FromMilliseconds(250),
+                    TimeSpan.FromSeconds(3),
+                    minimumWait: PostExitDrainFloor)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is OperationCanceledException or InvalidOperationException)

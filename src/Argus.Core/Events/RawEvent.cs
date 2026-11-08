@@ -46,6 +46,13 @@ public sealed record RawEvent
     /// </summary>
     public FileEffect? FileEffect { get; init; }
 
+    /// <summary>
+    /// Source path of a rename. A rename is the one file operation whose meaning is a pair,
+    /// so both halves belong in the contract instead of a JSON blob: rules need to compare
+    /// the old and the new name (an extension change is the ransomware signal).
+    /// </summary>
+    public string? PreviousPath { get; init; }
+
     public string? Detail { get; init; }
 
     public Observability? Observability { get; init; }

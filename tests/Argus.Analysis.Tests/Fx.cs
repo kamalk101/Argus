@@ -83,6 +83,37 @@ internal static class Fx
     /// A burst of file creates (or writes/opens, per <paramref name="kind"/> and
     /// <paramref name="effect"/>) spread evenly over <paramref name="span"/> seconds.
     /// </summary>
+    public static RawEvent Rename(int pid, string previousPath, string path, double seconds = 1) => new()
+    {
+        Ts = T0.AddSeconds(seconds),
+        Kind = EventKind.FileRename,
+        Pid = pid,
+        Target = path,
+        PreviousPath = previousPath,
+        Source = EventSourceKind.Replay,
+    };
+
+    /// <summary>
+    /// Marker-appending renames spread over directories: the shape F-006 looks for.
+    /// </summary>
+    public static IEnumerable<RawEvent> MarkerRenames(
+        int count,
+        double seconds,
+        double span,
+        int directories = 8,
+        string extension = "docx",
+        string marker = "locked")
+    {
+        var step = count > 1 ? span / (count - 1) : 0;
+        for (var i = 0; i < count; i++)
+        {
+            var directory = i % directories;
+            var name = $"file{i:D3}.{extension}";
+            var root = $@"C:\argus-test\docs\dir{directory}\";
+            yield return Rename(RootPid, root + name, root + name + "." + marker, seconds + (i * step));
+        }
+    }
+
     public static IEnumerable<RawEvent> MassCreates(
         int count,
         double seconds,

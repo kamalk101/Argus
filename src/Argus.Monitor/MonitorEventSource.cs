@@ -37,6 +37,15 @@ public sealed class MonitorEventSource : IAsyncDisposable
     private int _rootAttached;
     private int _captureStartReported;
     private long _gaps;
+    private readonly List<RawEvent> _preAttach = [];
+    private bool _preAttachOverflowed;
+
+    /// <summary>
+    /// Cap on events held before the root pid is known. The window is milliseconds; the cap
+    /// exists so a caller that starts a monitor and never attaches a root cannot grow this
+    /// list without bound on a busy machine.
+    /// </summary>
+    private const int PreAttachCapacity = 20_000;
 
     /// <summary>
     /// How late the root may be attached after it started before the silence counts as a
@@ -212,8 +221,21 @@ public sealed class MonitorEventSource : IAsyncDisposable
         _processPoller?.AttachRoot(pid);
         SeedRoot(pid, imagePath ?? _options.RootImagePath, startedUtc);
 
-        // Capture was already running, so this measures the launch path, not the sensor.
-        ReportCaptureStart(startedUtc);
+        // Anything the target did between Process.Start returning and this call was held
+        // rather than dropped, so there is no unobserved window to report. The
+        // capture-start gap belongs to the other ordering, where the caller launched the
+        // target before the session existed.
+        ReplayPreAttach();
+
+        if (_preAttachOverflowed)
+        {
+            EmitGap(
+                "pre-attach-buffer-overflow",
+                string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"More than {PreAttachCapacity} events arrived before the root process was known; the excess was dropped and is missing from this session."));
+        }
+
         return true;
     }
 
@@ -260,9 +282,17 @@ public sealed class MonitorEventSource : IAsyncDisposable
         }
     }
 
-    /// <summary>Records the root as in-scope and emits its synthetic launch event.</summary>
+    /// <summary>
+    /// Records the root as in-scope and emits its synthetic launch event.
+    ///
+    /// Also flips <see cref="HasRoot"/>: this is the single place a root becomes known, so both
+    /// orderings (root supplied up front, root attached after launch) end up here. Forgetting
+    /// that made every event on the legacy path sit in the pre-attach buffer forever - caught by
+    /// <c>--self-test</c>, which starts the monitor with its own pid.
+    /// </summary>
     private void SeedRoot(int pid, string? imagePath, DateTimeOffset startedUtc)
     {
+        Volatile.Write(ref _rootAttached, 1);
         var rootEvent = new RawEvent
         {
             Ts = startedUtc,
@@ -292,9 +322,67 @@ public sealed class MonitorEventSource : IAsyncDisposable
         RawEvent? routed;
         lock (_gate)
         {
+            if (!HasRoot)
+            {
+                BufferPreAttach(rawEvent);
+                return;
+            }
+
             routed = Route(rawEvent);
         }
 
+        Forward(routed);
+    }
+
+    /// <summary>
+    /// Holds events that arrive before the root pid is known.
+    ///
+    /// Capture runs before the target is launched, so the session spends a few milliseconds
+    /// with no root, during which nothing can be in scope. Those events used to be dropped:
+    /// a batch whose whole life was inside that window was invisible (a probe creating,
+    /// renaming and deleting 40 files in ~50 ms recorded only the root start). They are
+    /// buffered and re-attributed once the root arrives - the tracker then picks out the
+    /// root and anything whose parent chain reaches it, exactly as it does for live events.
+    /// </summary>
+    private void BufferPreAttach(RawEvent rawEvent)
+    {
+        if (_preAttach.Count >= PreAttachCapacity)
+        {
+            if (!_preAttachOverflowed)
+            {
+                _preAttachOverflowed = true;
+                _stats.OnDroppedBeforeRoot();
+            }
+
+            return;
+        }
+
+        _preAttach.Add(rawEvent);
+    }
+
+    private void ReplayPreAttach()
+    {
+        RawEvent[] pending;
+        lock (_gate)
+        {
+            pending = _preAttach.ToArray();
+            _preAttach.Clear();
+        }
+
+        foreach (var rawEvent in pending.OrderBy(static e => e.Ts))
+        {
+            RawEvent? routed;
+            lock (_gate)
+            {
+                routed = Route(rawEvent);
+            }
+
+            Forward(routed);
+        }
+    }
+
+    private void Forward(RawEvent? routed)
+    {
         if (routed is null)
         {
             return;
