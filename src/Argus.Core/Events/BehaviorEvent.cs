@@ -51,6 +51,9 @@ public sealed record BehaviorEvent
 
     public string? HostName { get; init; }
 
+    /// <summary>Outcome of the lookup, when the resolver reported one (see <see cref="DnsStatus"/>).</summary>
+    public DnsStatus? DnsStatus { get; init; }
+
     public long? BytesOut { get; init; }
 
     public long? BytesIn { get; init; }

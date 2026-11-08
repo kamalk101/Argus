@@ -70,11 +70,13 @@ public sealed class RuleCatalog
             new CrossProcessLaunchRule(),
             new BarePublicIpRule(),
             new RiskyPortRule(),
+            new FailedLookupStormRule(active),
         ];
 
         ICorrelatedRule[] correlatedRules =
         [
             new PersistenceThenNetworkRule(),
+            new StartupWriteThenExecuteRule(),
         ];
 
         return new RuleCatalog(eventRules, correlatedRules);

@@ -48,6 +48,7 @@ public sealed class EventNormalizer
             RemotePort = raw.RemotePort,
             Protocol = raw.Protocol,
             HostName = raw.HostName,
+            DnsStatus = raw.DnsStatus,
             BytesOut = raw.BytesOut,
             BytesIn = raw.BytesIn,
             FileEffect = raw.FileEffect,

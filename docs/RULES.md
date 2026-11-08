@@ -2,8 +2,8 @@
 
 Generated view: `dotnet run --project src/Argus.Cli -- rules` (add `--json` for machine output).
 
-This is **21 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
-reason, counterfactual and at least two fixtures each.
+This is **23 of the 23 rules** in `PLAN.md` §6.3 — the catalogue is complete. Each lands in the same contract: one rule,
+reason, counterfactual and at least two fixtures.
 
 ## Shipped rules
 
@@ -21,6 +21,7 @@ reason, counterfactual and at least two fixtures each.
 | N-002 | Periodic callbacks to one endpoint | 60 | network | T1071 | aggregated (600 s) |
 | N-003 | Large outbound transfer to one address | 65 | network | T1041 | aggregated (60 s) |
 | N-004 | Connection to a bare public address | 35 | network | T1095 | per-event |
+| N-005 | Storm of lookups for names that do not exist | 50 | network | T1568.002 | aggregated (60 s) |
 | P-001 | Shell or interpreter spawned by a non-shell parent | 60 | process | T1059 | per-event |
 | P-002 | Unexpected command interpreter | 85 | process | T1059 | per-event |
 | P-003 | Interpreter with encoded or remote payload | 75 | process | T1218, T1027 | per-event |
@@ -30,6 +31,7 @@ reason, counterfactual and at least two fixtures each.
 | P-007 | Shadow copy or recovery tampering | 80 | process | T1490 | per-event |
 | P-008 | Process in the application's directory with no observed creator | 65 | process | T1055 | per-event |
 | X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated |
+| X-002 | Startup write followed by execution of that file | 85 | process + file | T1547.001 | correlated |
 
 **How registry writes are attributed (measured).** The classic registry keyword names a key
 when it is opened and reports the value write separately, but the handle in the write never
@@ -122,10 +124,19 @@ somewhere the user never chose — and each is deliberately narrow:
   the previous two minutes. Anything using its own resolver, a cached address or DNS-over-HTTPS looks
   like a hardcoded callback. Severity 35, and it should never appear as the only finding in a report.
 
-`N-005` (NXDOMAIN storm) is **not** shipped: the DNS-Client record carries a status field that is
-only parked in the event's `Detail` blob, and rules are not allowed to read facts from a JSON blob.
-Shipping it needs a first-class field in the event contract, which is a schema change rather than a
-rule.
+`N-005` (NXDOMAIN storm) needed one contract change to ship honestly. The DNS-Client record carries
+the resolver's status, but it was parked in the event's `Detail` JSON, and a rule is not allowed to
+dig a fact out of a blob. `BehaviorEvent.DnsStatus` is now a first-class field with three values:
+`Success`, `NameDoesNotExist` and `NoAnswer`. That third value is the point — a timeout or a refused
+query says something about the path to the resolver, not about the name, so lumping the failures
+together would let a flaky network look exactly like a domain-generation algorithm. The rule counts
+**distinct** names per process, so one dead host retried forty times is quiet; fifteen candidates that
+were never registered is not.
+
+`X-002` pairs a persistence write with execution of **that same canonical path**. Matching on the file
+name instead would correlate every install where a helper shares a name with something in Startup, so
+the rule compares `PathKey`s and refuses to fire when either side is unresolved. It reads only a write
+that changed content — a bare create is create-or-open and proves nothing was written.
 
 Volume rules needed one sensor addition: `TcpIp/Send` and `TcpIp/Recv` were being dropped, because a
 connection record says where data is going, not how much went. Both now map to `NetFlow` with

@@ -35,6 +35,13 @@ public sealed record RawEvent
 
     public string? HostName { get; init; }
 
+    /// <summary>
+    /// Result code of a DNS query, when the resolver reported one. Only an NXDOMAIN-equivalent
+    /// counts as a failed lookup; a timeout or a refused query is a transport problem, not evidence
+    /// that a name does not exist.
+    /// </summary>
+    public DnsStatus? DnsStatus { get; init; }
+
     public long? BytesOut { get; init; }
 
     public long? BytesIn { get; init; }

@@ -86,9 +86,9 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **192 tests** (96 core, 85 analysis, 11 storage), **32/32** asserted
-replay scenarios, 15 of the 23 catalogued rules shipped (`F-001` … `F-008`, `N-001` … `N-004`,
-`P-002`, `P-003`, `X-001`).
+Current automated counts: **232 tests** (96 core, 125 analysis, 11 storage), **47/47** asserted
+replay scenarios, and **all 23 rules** in `PLAN.md` §6.3 shipped (`F-001` … `F-008`, `N-001` … `N-005`,
+`P-001` … `P-008`, `X-001`, `X-002`).
 
 ## 4. Architecture and data flow
 
@@ -891,8 +891,9 @@ already contain gaps, listed above.
 ### 12.11 Next in Phase 3
 
 
-The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
-aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use
+The catalogue is complete (23 of 23, each with firing and quiet fixtures). What remains for Phase 3
+is verification under real activity rather than new rules: replay the live probes on the VM and
+confirm the replayed verdict matches, and keep `docs/RULES.md` in step with the generated table. Use
 `FileChangeEvidence` for every file rule — do not reintroduce "create means wrote". Known noise
 to tune with fixtures rather than suppression: the interpreter scratch `.ps1` in `%TEMP%`
 (§10), and utility `cmd.exe`/`powershell.exe` children under `P-002` when the parent is an

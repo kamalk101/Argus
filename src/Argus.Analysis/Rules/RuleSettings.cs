@@ -51,6 +51,11 @@ public sealed record RuleSettings
 
     public double OutboundVolumeWindowSeconds { get; init; } = 60;
 
+    /// <summary>Distinct names that must fail to resolve before N-005 reports a storm.</summary>
+    public int FailedLookupCount { get; init; } = 15;
+
+    public double FailedLookupWindowSeconds { get; init; } = 60;
+
     public static RuleSettings Default { get; } = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -111,6 +116,8 @@ public sealed record RuleSettings
         RequirePositive(RepeatedFlagsWindowSeconds, nameof(RepeatedFlagsWindowSeconds));
         RequirePositive(OutboundVolumeBytes, nameof(OutboundVolumeBytes));
         RequirePositive(OutboundVolumeWindowSeconds, nameof(OutboundVolumeWindowSeconds));
+        RequirePositive(FailedLookupCount, nameof(FailedLookupCount));
+        RequirePositive(FailedLookupWindowSeconds, nameof(FailedLookupWindowSeconds));
 
         if (BeaconMaxJitter <= 0 || BeaconMaxJitter >= 1)
         {

@@ -762,6 +762,10 @@ public sealed class EtwEventMapper
         AddDetail(detail, "status", FirstValue(record, "QueryStatus", "Status"));
         AddDetail(detail, "results", FirstValue(record, "QueryResults", "Results"));
 
+        // The status belongs in the contract: N-005 counts failed lookups, and a rule is not
+        // allowed to dig a fact out of the Detail blob to do it.
+        var status = DnsStatuses.Parse(FirstValue(record, "QueryStatus", "Status")?.ToString());
+
         return new RawEvent
         {
             Ts = record.TimestampUtc,
@@ -770,6 +774,7 @@ public sealed class EtwEventMapper
             Tid = record.Tid,
             HostName = host,
             Target = host,
+            DnsStatus = status == DnsStatus.Unknown ? null : status,
             Detail = detail.Count == 0 ? null : JsonSerializer.Serialize(detail),
             // DNS payloads carry a PID, but attribution is best-effort when the
             // query is serviced by a shared resolver thread.

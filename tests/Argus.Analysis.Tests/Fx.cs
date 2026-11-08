@@ -68,13 +68,14 @@ internal static class Fx
         Source = EventSourceKind.Replay,
     };
 
-    public static RawEvent Dns(int pid, string host, double seconds = 1, EventKind kind = EventKind.DnsQuery) => new()
+    public static RawEvent Dns(int pid, string host, double seconds = 1, EventKind kind = EventKind.DnsQuery, DnsStatus? status = null) => new()
     {
         Ts = T0.AddSeconds(seconds),
         Kind = kind,
         Pid = pid,
         HostName = host,
         Target = host,
+        DnsStatus = status,
         Source = EventSourceKind.Replay,
     };
 

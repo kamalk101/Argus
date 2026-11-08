@@ -1,0 +1,17 @@
+{"$meta":{"name":"nxdomain-storm","description":"A program asks for fifteen different generated candidate names in eight seconds and the resolver answers \"no such name\" to every one. That is a domain-generation walk; N-005 reports the shape, not an intent.","rootPid":4312,"rootImagePath":"C:argus-testsample.exe","expect":{"rules":["N-005"],"absentRules":["N-004"],"band":"Suspicious","minScore":10,"maxDetections":1}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:argus-testsample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.000Z","kind":"dnsResponse","pid":4312,"hostName":"candidate00.example.invalid","target":"candidate00.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:01.500Z","kind":"dnsResponse","pid":4312,"hostName":"candidate01.example.invalid","target":"candidate01.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"dnsResponse","pid":4312,"hostName":"candidate02.example.invalid","target":"candidate02.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:02.500Z","kind":"dnsResponse","pid":4312,"hostName":"candidate03.example.invalid","target":"candidate03.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"dnsResponse","pid":4312,"hostName":"candidate04.example.invalid","target":"candidate04.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:03.500Z","kind":"dnsResponse","pid":4312,"hostName":"candidate05.example.invalid","target":"candidate05.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:04.000Z","kind":"dnsResponse","pid":4312,"hostName":"candidate06.example.invalid","target":"candidate06.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:04.500Z","kind":"dnsResponse","pid":4312,"hostName":"candidate07.example.invalid","target":"candidate07.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:05.000Z","kind":"dnsResponse","pid":4312,"hostName":"candidate08.example.invalid","target":"candidate08.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:05.500Z","kind":"dnsResponse","pid":4312,"hostName":"candidate09.example.invalid","target":"candidate09.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:06.000Z","kind":"dnsResponse","pid":4312,"hostName":"candidate10.example.invalid","target":"candidate10.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:06.500Z","kind":"dnsResponse","pid":4312,"hostName":"candidate11.example.invalid","target":"candidate11.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:07.000Z","kind":"dnsResponse","pid":4312,"hostName":"candidate12.example.invalid","target":"candidate12.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:07.500Z","kind":"dnsResponse","pid":4312,"hostName":"candidate13.example.invalid","target":"candidate13.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
+{"ts":"2026-05-01T10:00:08.000Z","kind":"dnsResponse","pid":4312,"hostName":"candidate14.example.invalid","target":"candidate14.example.invalid","dnsStatus":"nameDoesNotExist","source":"replay"}
