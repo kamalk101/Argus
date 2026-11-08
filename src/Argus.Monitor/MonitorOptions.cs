@@ -51,6 +51,10 @@ public sealed class MonitorStats
     private long _networkEvents;
     private long _dnsEvents;
     private long _registryEvents;
+    private readonly object _failureGate = new();
+    private readonly Queue<string> _mappingFailureSamples = new();
+
+    private const int MaxMappingFailureSamples = 5;
 
     /// <summary>Raw ETW callbacks received, before the collector's own filtering.</summary>
     public long EtwCallbacks => Interlocked.Read(ref _etwCallbacks);
@@ -76,6 +80,23 @@ public sealed class MonitorStats
     public long RegistryEvents => Interlocked.Read(ref _registryEvents);
 
     public long EtwLostEvents { get; set; }
+
+    /// <summary>
+    /// Short descriptors of the most recent payload decode failures, newest last.
+    /// They name the record and the exception type only: payload values (file paths,
+    /// registry keys, DNS names) are captured data and must not be surfaceable in
+    /// agent logs or session JSON.
+    /// </summary>
+    public IReadOnlyList<string> MappingFailureSamples
+    {
+        get
+        {
+            lock (_failureGate)
+            {
+                return _mappingFailureSamples.ToArray();
+            }
+        }
+    }
     public bool EtwStarted { get; set; }
     public bool DnsProviderEnabled { get; set; }
     public bool TcpTableAvailable { get; set; }
@@ -101,7 +122,25 @@ public sealed class MonitorStats
 
     public void OnChannelDropped() => Interlocked.Increment(ref _channelDropped);
 
-    public void OnMappingFailure() => Interlocked.Increment(ref _mappingFailures);
+    public void OnMappingFailure(string? sample = null)
+    {
+        Interlocked.Increment(ref _mappingFailures);
+
+        if (string.IsNullOrWhiteSpace(sample))
+        {
+            return;
+        }
+
+        lock (_failureGate)
+        {
+            while (_mappingFailureSamples.Count >= MaxMappingFailureSamples)
+            {
+                _mappingFailureSamples.Dequeue();
+            }
+
+            _mappingFailureSamples.Enqueue(sample);
+        }
+    }
 
     public void OnUnmapped() => Interlocked.Increment(ref _unmapped);
 

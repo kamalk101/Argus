@@ -15,7 +15,7 @@ malicious. It does not scan a file and print a verdict.
 |---|---|---|
 | 0 | Solution, event contract, docs, scripts | **done** (Linux-verified) |
 | 1 | Core model, scope tracking, scoring, SQLite, replay harness, fixtures | **done** (Linux-verified) |
-| 2 | ETW collectors + elevated agent host | **implemented**; live process capture + JSONL replay confirmed on Windows; file/network/DNS volume, UAC and API/SSE checks pending |
+| 2 | ETW collectors + elevated agent host | **done on Windows** for process, file, network+DNS capture and the API guards; `--elevate` UAC consent click unverified (unattended VM), registry volume and loss under load unverified |
 | 3 | Full 22-rule catalogue + correlation | not started |
 | 4 | Dashboard (8 screens) | not started |
 | 5 | Windows end-to-end, reports, tuning | not started |
@@ -40,10 +40,29 @@ directories are now excluded, ETW `DCStart`/`DCEnd` rundown records are dropped,
 never in scope, and timing alone is no longer evidence. The same recording now replays with 83
 of 84 events correctly out of scope, only the root process in scope, and 0 detections.
 
-**What is not verified:** the rest of live Windows behaviour. File/network/DNS/registry volume,
-event loss under load, UAC relaunch and the loopback API/SSE stream are implemented but still
-need their own checks. Use `scripts/smoke.ps1` (elevated) for the live path; until each leg has
-run on the target VM, treat it as unverified.
+Live Windows legs verified on the `tiny` VM since then (see `docs/HANDOFF.md` §3 for counts):
+
+- **File capture** — 989 events for a powershell target that wrote to `%TEMP%\argus-writes`,
+  PID-attributed, drive-letter paths, zero gaps, zero raw `\Device\` paths.
+- **Network + DNS capture** — a loopback listener plus four `.example.net` resolutions produced
+  `netConnect` and `dnsQuery`/`dnsResponse` with hostnames on the target PID, `partial`
+  observability for DNS.
+- **API guards** — `/api/health` 200 without a token, `/api/sessions` 401 without a token, bad
+  `Origin` 403, bad `Host` 400, good token 200, and SSE
+  `/api/sessions/{id}/stream` delivering `state` and `stats`.
+- **Non-elevated refusal** — exits 3 with the elevation message unless `--allow-non-elevated`.
+- **`scripts/verify.ps1 -Smoke`** — passes end-to-end (self-test, 15 s notepad capture, replay).
+- **`--self-test`** inside an elevated agent — elevation, kernel provider, DNS provider,
+  metadata and TCP table all pass.
+
+**Partially verified:** `--elevate` builds and launches the correct elevated child (checked by
+running the identical command line from an already-elevated shell), but the UAC consent click
+cannot be approved on the unattended VM, so the parent-side ready-file handshake has not been
+observed succeeding there.
+
+**What is not verified:** registry capture under real activity (writes were not exercised),
+event loss and the volume fuse under load on a busy machine, any non-trivial target such as
+`7z.exe`, and the dashboard. Treat those as unverified until they have run on the target VM.
 
 ## Layout
 

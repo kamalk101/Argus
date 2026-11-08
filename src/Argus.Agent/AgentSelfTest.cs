@@ -63,6 +63,12 @@ public static class AgentSelfTest
         try
         {
             monitor.Start();
+
+            // ETW needs 1-3 s after Start() to actually be consuming. Firing the probe
+            // immediately was a race: the session exists, so the checks pass on a fast
+            // machine and report zero events on a slow one for reasons that have nothing
+            // to do with the sensor.
+            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
             await GenerateActivityAsync().ConfigureAwait(false);
             await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
@@ -76,14 +82,35 @@ public static class AgentSelfTest
             stats.EtwStarted ? "kernel process/file/network/registry keywords enabled" : stats.EtwError ?? "not started"));
 
         // Delivery, not just enablement: a host can say "provider enabled" and still
-        // never hand the collector a record. The probe generates its own process and
-        // file activity so zero callbacks means a broken sensor, not an idle machine.
-        var delivered = stats.EtwCallbacks > 0;
-        checks.Add(("etw-delivery", delivered, delivered
-            ? string.Create(
+        // never hand the collector a record. Counting callbacks alone was too weak: the
+        // probe runs against the agent's own PID as root, so an all-filtered or
+        // rundown-only stream (or a scope misattribution of the probe child) also
+        // produced callbacks and passed. Require mapped events *and* the generated
+        // process start.
+        var sawCallbacks = stats.EtwCallbacks > 0;
+        var sawMapped = stats.EventsSeen > 0;
+        var sawGenerated = stats.ProcessStarts > 0;
+        checks.Add(("etw-delivery", sawCallbacks && sawMapped && sawGenerated, !sawCallbacks
+            ? "ETW started but delivered no callbacks even with generated process/file activity; check for a competing kernel session (Procmon, Sysmon, WPR) or a stale Argus session"
+            : !sawMapped
+                ? string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"{stats.EtwCallbacks} callback(s) arrived but none mapped and none failed ({stats.EtwFiltered} filtered out): provider keywords or kernel parser registration problem")
+                : !sawGenerated
+                    ? string.Create(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        $"{stats.EventsSeen} event(s) mapped but none of the generated process activity was seen: scope attribution did not accept the probe child")
+                    : string.Create(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        $"{stats.EtwCallbacks} callback(s), {stats.EtwFiltered} filtered out, {stats.EventsSeen} mapped ({stats.ProcessStarts} process start(s), {stats.FileEvents} file, {stats.NetworkEvents} network, {stats.DnsEvents} DNS), {stats.Unmapped} unmapped, {stats.MappingFailures} failed")));
+
+        if (stats.MappingFailures > 0)
+        {
+            // A decode failure is a sensor bug, not noise: say which records broke.
+            warnings.Add(string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"{stats.EtwCallbacks} callback(s), {stats.EtwFiltered} filtered out, {stats.EventsSeen} mapped, {stats.Unmapped} unmapped, {stats.MappingFailures} failed")
-            : "ETW started but delivered no callbacks even with generated process/file activity"));
+                $"{stats.MappingFailures} ETW record(s) failed to decode: {string.Join(", ", stats.MappingFailureSamples)}"));
+        }
 
         if (!stats.DnsProviderEnabled)
         {
@@ -133,6 +160,7 @@ public static class AgentSelfTest
                 stats.DnsEvents,
                 stats.RegistryEvents,
                 stats.MappingFailures,
+                stats.MappingFailureSamples,
                 stats.Unmapped,
                 stats.ChannelDropped,
                 stats.EtwLostEvents,

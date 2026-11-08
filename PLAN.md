@@ -34,9 +34,9 @@ This matters more than any diagram below, so it is not buried in an appendix.
 | `Argus.Analysis` (rules, correlator, features) | ✅ unit + replay tests | — |
 | `Argus.Storage` (SQLite schema, repos) | ✅ | — |
 | `Argus.Simulator` (synthetic + replay event source) | ✅ | — |
-| Dashboard (`web/`) | ✅ builds, runs, verified in browser | visual check on Windows |
+| Dashboard (`web/`) | ✗ not scaffolded until Phase 4 | ✅ required |
 | `Argus.Monitor` (ETW collectors) | ✅ compiles with `EnableWindowsTargeting`; platform-neutral mapping is unit-tested | ✅ runtime required |
-| `Argus.Agent` (elevation, Kestrel, live session) | ✅ compiles; live API/SSE/UAC unverifiable here | ✅ runtime required |
+| `Argus.Agent` (elevation, Kestrel, live session) | ✅ compiles | ✅ runtime verified on Windows (see `docs/HANDOFF.md` §3) |
 | `Argus.Desktop` (WebView2 shell) | ✗ not scaffolded until Phase 4 | ✅ required |
 | End-to-end behaviour, event loss, perf under load | ✗ | ✅ required |
 
@@ -610,8 +610,21 @@ merely because they shared `System32`, and ETW process rundown records put Idle 
 System (4) in scope, which cascaded to their children. Shared directories are now excluded,
 `DCStart`/`DCEnd` rundown records are dropped, PIDs 0/4 are never in scope, and timing alone
 is no longer treated as evidence. The same recording now replays with only the root process
-in scope and 0 detections. **File/network/DNS volume, event loss under load, UAC relaunch and
-the live API/SSE stream still need their own Windows checks.**
+in scope and 0 detections.
+
+**Progress (2026-11 verification pass, `f074b6c`):** the live Windows legs are now verified on
+the `tiny` VM. Exact counts are in `docs/HANDOFF.md` §3; in summary:
+
+- **verified:** ETW process capture, file capture (989 PID-attributed events, drive-letter
+  paths, zero gaps), network + DNS capture (`netConnect`, `dnsQuery`/`dnsResponse` on the
+  target PID), the loopback API guards (`/api/health` 200, `/api/sessions` 401, bad `Origin`
+  403, bad `Host` 400, good token 200), SSE `state`/`stats`, non-elevated refusal (exit 3),
+  and `scripts/verify.ps1 -Smoke` end-to-end;
+- **partial:** `--elevate` launches the correct elevated child (re-run from an already-elevated
+  shell), but the UAC consent click cannot be approved on the unattended VM, so the
+  ready-file handshake has not been seen succeeding there;
+- **unverified:** registry capture under real activity, event loss / volume fuse under load,
+  `7z.exe` or any non-trivial target, and the dashboard.
 
 ### Phase 0 — Foundations (2 d)
 Repo `git init`, solution + 6 projects, `Directory.Build.props`, analyzers, editorconfig, `PLAN.md`/`docs/*`, event contract + enums, capability matrix, threat model, .NET SDK bootstrap in `scripts/`, web scaffold (Vite + TS + Tailwind + shell layout), `scripts/verify.sh`.
@@ -622,7 +635,7 @@ Schema v1 + migrations, repositories, FTS, rollups, `BehaviorEvent` normaliser, 
 **DoD:** `replay` produces deterministic, asserted detection output for 12 scenarios; storage tests green incl. WAL concurrency; aggregator groups repeats.
 **Hand-off:** you install .NET 8 SDK on Windows and run `scripts/verify.ps1` (build only) — catches Windows-target compile issues early.
 
-### Phase 2 — Windows monitoring + agent host (6 d) — Linux ✅ · Win ✅ (process capture + replay) · file/net/UAC/API ⏳
+### Phase 2 — Windows monitoring + agent host (6 d) — Linux ✅ · Win ✅ (process/file/network+DNS/API/SSE) · UAC consent click ⏳ · registry volume + loss under load ⏳
 Kernel-Process collector (cmdline chain), Kernel-File collector (scope filter, drive-letter mapping, read sampling, fuse), Kernel-Network + `GetExtendedTcpTable` attribution repair, DNS collector, registry collector (optional), gap recorder, agent host with Kestrel + SSE + token/Origin guards, elevation bootstrap (`runas` relaunch, single instance mutex), `scripts/verify.ps1` checklist, `scripts/smoke.ps1` live check, first real session recorded to JSONL.
 **DoD (Windows):** monitoring `notepad.exe` and `7z.exe` yields a correct tree, real file events with resolved paths, real connections with owner PID; non-elevated start shows the elevation path, not a crash; recorded JSONL replays identically on Linux. Verified by `scripts/smoke.ps1`: self-test JSON, live notepad capture, non-empty recording, replay exit 0.
 

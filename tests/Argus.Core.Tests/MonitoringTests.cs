@@ -147,10 +147,102 @@ public sealed class MonitoringTests
     }
 
     [Fact]
+    public void File_event_without_resolvable_path_is_partial_not_dropped()
+    {
+        // No FileName/OpenPath and no cached FileKey: the path is unknowable, but the
+        // event still happened. It must reach the session as partial evidence instead of
+        // being counted as a deliberately ignored kind.
+        var mapper = new EtwEventMapper();
+        var record = Record("FileIOWrite", 16, 5000, ("FileKey", 99UL), ("IoSize", 16UL));
+
+        var raw = mapper.Map(record);
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.FileWrite, raw.Kind);
+        Assert.Null(raw.Target);
+        Assert.Equal(Observability.Partial, raw.Observability);
+        Assert.Contains("pathUnresolved", raw.Detail, StringComparison.Ordinal);
+        Assert.Contains("99", raw.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rename_without_resolvable_paths_is_partial_not_dropped()
+    {
+        var mapper = new EtwEventMapper();
+
+        var raw = mapper.Map(Record("FileIORename", 19, 5000));
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.FileRename, raw.Kind);
+        Assert.Null(raw.Target);
+        Assert.Equal(Observability.Partial, raw.Observability);
+    }
+
+    [Fact]
     public void Unknown_event_is_ignored()
     {
         var mapper = new EtwEventMapper();
         Assert.Null(mapper.Map(Record("SomethingElse", 999, 1)));
+    }
+
+    // The mapper's contract has two distinct "no event" cases, and the collector
+    // counts them differently: null means "deliberately ignored" (Unmapped), a throw
+    // means "malformed payload" (MappingFailures). These tests pin that boundary so a
+    // future catch-all cannot silently turn sensor bugs back into noise.
+    [Fact]
+    public void Malformed_payload_throws_instead_of_returning_null()
+    {
+        var mapper = new EtwEventMapper();
+        var record = Record("TcpIpConnect", 12, 5000, ("daddr", 0x0100007Fu), ("dport", "not-a-port"));
+
+        Assert.ThrowsAny<Exception>(() => mapper.Map(record));
+    }
+
+    [Fact]
+    public void Malformed_process_payload_throws_instead_of_returning_null()
+    {
+        var mapper = new EtwEventMapper();
+        var record = Record("ProcessStart", 1, 5000, ("ParentID", "not-a-pid"));
+
+        Assert.ThrowsAny<Exception>(() => mapper.Map(record));
+    }
+
+    [Theory]
+    [InlineData("FileIOClose", 14)]
+    [InlineData("TcpIpSend", 10)]
+    [InlineData("ThreadStart", 3)]
+    [InlineData("SystemConfigCPU", 31)]
+    public void Known_but_ignored_record_returns_null(string eventName, int eventId)
+    {
+        var mapper = new EtwEventMapper();
+
+        Assert.Null(mapper.Map(Record(eventName, eventId, 5000, ("FileName", @"C:\temp\a.txt"))));
+    }
+
+    [Fact]
+    public void Valid_kernel_process_start_maps_after_parser_registration()
+    {
+        // Regression for the Source.Kernel registration change: a named session only
+        // decodes kernel records once a kernel parser is registered, and the decoded
+        // shape must still map to a process start with its identity fields intact.
+        var mapper = new EtwEventMapper();
+        var record = Record("Process/Start", 1, 5000,
+            ("ImagePath", @"C:\Windows\System32\notepad.exe"),
+            ("ImageFileName", "notepad.exe"),
+            ("ParentID", 4312));
+
+        var raw = mapper.Map(record);
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.ProcessStart, raw.Kind);
+        Assert.Equal(5000, raw.Pid);
+        Assert.Equal(7, raw.Tid);
+        Assert.Equal(4312, raw.ParentPid);
+        Assert.Equal(@"C:\Windows\System32\notepad.exe", raw.ImagePath);
+        Assert.Equal("notepad.exe", raw.ImageName);
+        Assert.Equal(T0, raw.Ts);
+        Assert.Equal(Observability.Direct, raw.Observability);
+        Assert.Equal(EventSourceKind.Etw, raw.Source);
     }
 
     [Fact]

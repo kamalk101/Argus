@@ -132,7 +132,9 @@ public sealed class EtwEventMapper
 
             if (string.IsNullOrEmpty(newPath))
             {
-                return null;
+                // A rename whose paths cannot be resolved is lost evidence, not an
+                // uninteresting kind: it must reach the session so the gap is visible.
+                return UnresolvedPathEvent(record, EventKind.FileRename, null);
             }
 
             return new RawEvent
@@ -162,7 +164,12 @@ public sealed class EtwEventMapper
         path = Resolve(path);
         if (string.IsNullOrEmpty(path))
         {
-            return null;
+            // Returning null here counted as "deliberately ignored" (Unmapped), which
+            // reads as an uninteresting kind. It is actually a file event whose path we
+            // could not resolve (no FileName, no OpenPath, no cached FileKey), so the
+            // event is emitted with Partial observability and no target. Loss must be
+            // recorded and shown, never hidden.
+            return UnresolvedPathEvent(record, kind.Value, fileKey);
         }
 
         if (kind == EventKind.FileCreate && fileKey is { } createKey)
@@ -183,6 +190,30 @@ public sealed class EtwEventMapper
             Target = path,
             Detail = BytesDetail(record),
             Observability = Observability.Direct,
+            Source = EventSourceKind.Etw,
+        };
+    }
+
+    private static RawEvent UnresolvedPathEvent(EtwRecord record, EventKind kind, ulong? fileKey)
+    {
+        var detail = new Dictionary<string, string?>
+        {
+            ["pathUnresolved"] = "true",
+        };
+
+        if (fileKey is { } key)
+        {
+            detail["fileKey"] = key.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return new RawEvent
+        {
+            Ts = record.TimestampUtc,
+            Kind = kind,
+            Pid = record.Pid,
+            Tid = record.Tid,
+            Detail = JsonSerializer.Serialize(detail),
+            Observability = Observability.Partial,
             Source = EventSourceKind.Etw,
         };
     }

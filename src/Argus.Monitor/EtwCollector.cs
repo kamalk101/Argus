@@ -193,12 +193,22 @@ public sealed class EtwCollector : IDisposable
 
             _emit(rawEvent);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException
-            or NotSupportedException or FormatException or InvalidCastException or OverflowException)
+        catch (Exception exception)
         {
-            _stats.OnMappingFailure();
+            // The mapper deliberately has no catch-all so that a malformed payload is
+            // distinguishable from an ignored kind. That makes this method the boundary:
+            // it must stay total, because an exception escaping here can stop ETW
+            // dispatch for the rest of the session and silently end capture. A type that
+            // slips past a narrower filter (IndexOutOfRange, NullReference, ...) is still
+            // a decode failure, so it is counted as one.
+            _stats.OnMappingFailure(DescribeFailure(name, (int)data.ID, exception));
         }
     }
+
+    private static string DescribeFailure(string eventName, int eventId, Exception exception) =>
+        string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{eventName}#{eventId} {exception.GetType().Name}");
 
     private bool IsEnabled(TraceEvent data, string name)
     {
