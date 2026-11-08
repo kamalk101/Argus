@@ -22,17 +22,26 @@ reason, counterfactual and at least two fixtures each.
 | N-001 | Connection to a risky service port | 45 | network | T1021 | per-event |
 | X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated (60 s) |
 
-**What the registry sensor can and cannot see (measured).** Value writes performed by a normal
-program do not reach the stream: `reg add …\CurrentVersion\Run` and a PowerShell `Set-ItemProperty`
-on the same key produced no `RegistrySetValue` event at all, and the key name never appeared in the
-raw registry records. What arrives instead are opens, queries and the kernel's own key-control-block
-traffic — `Registry/KCBCreate`, `Registry/KCBDelete` — whose header process id is whichever process
-triggered a cache operation. Those used to be mapped as value writes by substring, so a session that
-only ran `echo hello` collected 104 `registryDeleteValue` events against
-`HKLM\SYSTEM\…\SafeBoot`: a third of the recorded stream, attributed to the target. They are now
-ignored, which means `F-002` rests on its process-channel evidence in practice, and an
-`F-002` finding from a `RegistrySetValue` event should be treated as the rarer case until the write
-path itself is verified.
+**How registry writes are attributed (measured).** The classic registry keyword names a key
+when it is opened and reports the value write separately, but the handle in the write never
+matched a handle an open had reported — opens report either `0` or an unrelated value — so that
+path can never attribute a write. The kernel's manifest provider
+(`Microsoft-Windows-Kernel-Registry`) does it by object: an open or create event carries the key
+name and the kernel object it produced, and the value write carries that object. The sensor
+enables it alongside the classic keyword and joins the two, which is how
+`reg add …\CurrentVersion\Run` is reported as
+`\REGISTRY\USER\<sid>\Software\Microsoft\Windows\CurrentVersion\Run\<value>`. Because the join is through an
+object pointer the event is marked `Inferred`, not `Direct`, and an entry is dropped as soon as
+the kernel retires the object — those pointers are reused, and the same value was measured
+belonging to two unrelated keys.
+
+Two things the stream still contains and the rules do not use: the kernel's own key-cache
+traffic (`Registry/KCBCreate`, `Registry/KCBDelete`), whose header pid is whichever process
+triggered a cache operation and which used to be mapped as writes by substring matching — a
+session that only ran `echo hello` collected 104 `registryDeleteValue` events against
+`HKLM\SYSTEM\…\SafeBoot`, a third of its stream, before that was fixed;
+and the shell's MuiCache entries, whose *value names* are device paths, so their targets are
+hive-relative and visibly partial.
 
 A rule's channel names what the finding is **about**, not which sensor produced it. `F-002` is a
 registry autostart write whether it was seen as a `RegistrySetValue` or as

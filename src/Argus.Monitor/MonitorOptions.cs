@@ -109,9 +109,11 @@ public sealed class MonitorStats
     }
     public bool EtwStarted { get; set; }
     public bool DnsProviderEnabled { get; set; }
+    public bool RegistryProviderEnabled { get; set; }
     public bool TcpTableAvailable { get; set; }
     public string? EtwError { get; set; }
     public string? DnsError { get; set; }
+    public string? RegistryProviderError { get; set; }
 
     public void OnSeen() => Interlocked.Increment(ref _eventsSeen);
 

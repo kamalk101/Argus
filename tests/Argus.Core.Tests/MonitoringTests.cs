@@ -300,6 +300,151 @@ public sealed class MonitoringTests
         Assert.Null(raw);
     }
 
+    private static EtwRecord RegistryRecord(int eventId, int pid, params (string Key, object? Value)[] payload) =>
+        new()
+        {
+            TimestampUtc = T0,
+            Provider = EtwEventMapper.RegistryManifestProvider,
+            EventName = $"EventID({eventId})",
+            EventId = eventId,
+            Pid = pid,
+            Tid = 7,
+            Payload = payload.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase),
+        };
+
+    [Fact]
+    public void Registry_write_is_attributed_through_the_kernel_object()
+    {
+        // Measured live: the manifest registry provider names a key when it is created or
+        // opened (event 1/2, with RelativeName and the object it produced), and a value write
+        // (event 5) carries only that object. The classic handle in the legacy SetValue record
+        // never matched — Opens report either 0 or an unrelated handle — so the object is the
+        // only usable link, and without it a Run-key write is invisible.
+        var mapper = new EtwEventMapper();
+
+        Assert.Null(mapper.Map(RegistryRecord(1, 3836,
+            ("KeyObject", 0xA1UL),
+            ("BaseObject", 0xB0UL),
+            ("Disposition", 2),
+            ("RelativeName", @"Software\Microsoft\Windows\CurrentVersion\Run"))));
+
+        var raw = mapper.Map(RegistryRecord(5, 3836,
+            ("KeyObject", 0xA1UL),
+            ("KeyName", string.Empty),
+            ("ValueName", "ArgusSpike"),
+            ("Type", 1),
+            ("DataSize", 48)));
+
+        Assert.NotNull(raw);
+        Assert.Equal(EventKind.RegistrySetValue, raw.Kind);
+        Assert.Equal(3836, raw.Pid);
+        Assert.Equal(@"Software\Microsoft\Windows\CurrentVersion\Run\ArgusSpike", raw.Target);
+
+        // The key name came from a different record, joined by an object pointer: the target
+        // is not something this record said.
+        Assert.Equal(Observability.Inferred, raw.Observability);
+    }
+
+    [Fact]
+    public void Registry_relative_name_is_composed_with_its_named_parent()
+    {
+        // Live: reg.exe opens the hive as "\REGISTRY\USER\S-1-5-21-...", then creates
+        // "Software\Microsoft\Windows\CurrentVersion\Run" relative to it. The write carries
+        // only the object, so the hive has to come from the parent to say which Run key it is.
+        var mapper = new EtwEventMapper();
+        const string Hive = @"\REGISTRY\USER\S-1-5-21-1001";
+
+        mapper.Map(RegistryRecord(2, 3836, ("KeyObject", 0xB0UL), ("RelativeName", Hive)));
+        mapper.Map(RegistryRecord(1, 3836, ("BaseObject", 0xB0UL), ("KeyObject", 0xA1UL),
+            ("RelativeName", @"Software\Microsoft\Windows\CurrentVersion\Run")));
+
+        var raw = mapper.Map(RegistryRecord(5, 3836, ("KeyObject", 0xA1UL), ("ValueName", "ArgusSpike")));
+
+        Assert.NotNull(raw);
+        Assert.Equal(Hive + @"\Software\Microsoft\Windows\CurrentVersion\Run\ArgusSpike", raw.Target);
+    }
+
+    [Fact]
+    public void Registry_name_is_not_composed_with_a_partial_parent()
+    {
+        // Live: a key opened as "S-1-5-21-..." (hive-relative, no hive in the record) was
+        // composed into "S-1-5-21-...\Device\HarddiskVolume2\...\cmd.exe", which reads
+        // like an absolute path and is not one. Nothing is composed unless the parent name
+        // is absolute; the relative name is then kept as reported.
+        var mapper = new EtwEventMapper();
+
+        mapper.Map(RegistryRecord(2, 3700, ("KeyObject", 0xC0UL), ("RelativeName", "S-1-5-21-1001")));
+        mapper.Map(RegistryRecord(1, 3700, ("BaseObject", 0xC0UL), ("KeyObject", 0xC1UL),
+            ("RelativeName", @"Device\HarddiskVolume2\Windows\System32\cmd.exe")));
+
+        var raw = mapper.Map(RegistryRecord(5, 3700, ("KeyObject", 0xC1UL), ("ValueName", "Version")));
+
+        Assert.NotNull(raw);
+        Assert.Equal(@"Device\HarddiskVolume2\Windows\System32\cmd.exe\Version", raw.Target);
+    }
+
+    [Fact]
+    public void Registry_value_name_that_is_already_a_path_is_not_doubled()
+    {
+        // Live: the shell records MuiCache entries whose *value name* is the full device path
+        // of the executable. Joining key and value with a separator produced
+        // "...\REGISTRY\USER\<sid>\Device\..." — a path that does not exist.
+        var mapper = new EtwEventMapper();
+
+        mapper.Map(Record("Registry/Open", 0, 4380,
+            ("KeyName", @"\REGISTRY\USER\S-1\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"),
+            ("KeyHandle", 0x10UL)));
+
+        var raw = mapper.Map(Record("Registry/SetValue", 0, 4380,
+            ("KeyHandle", 0x10UL),
+            ("ValueName", @"\Device\HarddiskVolume2\Windows\System32\cmd.exe")));
+
+        Assert.NotNull(raw);
+        Assert.Equal(
+            @"\REGISTRY\USER\S-1\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache\Device\HarddiskVolume2\Windows\System32\cmd.exe",
+            raw.Target);
+    }
+
+    [Fact]
+    public void Registry_write_to_an_unknown_object_is_dropped()
+    {
+        var mapper = new EtwEventMapper();
+
+        var raw = mapper.Map(RegistryRecord(5, 3836, ("KeyObject", 0xDEADUL), ("ValueName", "X")));
+
+        Assert.Null(raw);
+    }
+
+    [Fact]
+    public void Registry_object_is_forgotten_when_the_control_block_goes()
+    {
+        // The kernel reuses these pointers: the same value was measured belonging to
+        // "system\Setup" and later to an unrelated NLS key, so a stale entry would attribute
+        // a write to a key that is no longer open.
+        var mapper = new EtwEventMapper();
+
+        mapper.Map(RegistryRecord(2, 3836, ("KeyObject", 0xA1UL), ("RelativeName", @"Software\Vendor")));
+        Assert.NotNull(mapper.Map(RegistryRecord(5, 3836, ("KeyObject", 0xA1UL), ("ValueName", "One"))));
+
+        mapper.Map(RegistryRecord(13, 3836, ("KeyObject", 0xA1UL)));
+
+        Assert.Null(mapper.Map(RegistryRecord(5, 3836, ("KeyObject", 0xA1UL), ("ValueName", "Two"))));
+    }
+
+    [Fact]
+    public void Registry_key_created_with_an_absolute_name_keeps_it()
+    {
+        var mapper = new EtwEventMapper();
+
+        mapper.Map(RegistryRecord(2, 3836, ("KeyObject", 0xA2UL),
+            ("RelativeName", @"\REGISTRY\USER\S-1-5-21-1001\Software\Microsoft\Windows\CurrentVersion\RunOnce")));
+
+        var raw = mapper.Map(RegistryRecord(5, 3836, ("KeyObject", 0xA2UL), ("ValueName", "Updater")));
+
+        Assert.NotNull(raw);
+        Assert.EndsWith(@"CurrentVersion\RunOnce\Updater", raw.Target, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Kernel_registry_cache_events_are_not_value_writes()
     {

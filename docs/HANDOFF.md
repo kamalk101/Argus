@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **156 tests** (89 core, 56 analysis, 11 storage), **26/26** asserted
+Current automated counts: **163 tests** (96 core, 56 analysis, 11 storage), **26/26** asserted
 replay scenarios, 12 of the 23 catalogued rules shipped (`F-001` … `F-008`, `N-001`, `P-002`,
 `P-003`, `X-001`).
 
@@ -483,6 +483,11 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   Leaving it to `AttachRoot` alone made the legacy path (root supplied up front) buffer forever;
   `--self-test` caught it with "mapped but none of the generated process activity was seen". If a
   session records only its root event, check this first.
+- **Registry writes are attributed through a kernel object, not a handle.** The manifest provider
+  (`Microsoft-Windows-Kernel-Registry`) names a key when it is opened or created and reports the
+  value write separately; only the object pointer links them. Do not try to join on `KeyHandle`:
+  measured live, an Open reports either `0` or an unrelated handle. Cached names must be dropped
+  when the kernel retires the object (id 13) because the pointers are reused.
 - **Registry event names must match exactly.** `Registry/KCBCreate` / `Registry/KCBDelete` are the
   kernel's key-cache traffic; their header pid is whichever process triggered a cache operation, so
   substring matching turned them into writes "by the target" (104 bogus `registryDeleteValue` events
@@ -669,7 +674,7 @@ final) is excluded because it is the commonest extension change on a desktop. Ve
 a probe renaming 12 files across 8 directories produced `F-006` at 20.5 Suspicious with 0 gaps,
 and replay of the same recording reproduces it. New fixtures 23 (`rename-burst-ransomware`,
 fires) and 24 (`bulk-rename-benign`: 60 in-folder renames with the extension kept plus 12 finished
-downloads, quiet). Tests: 156 (89 core, 56 analysis, 11 storage); 26/26 fixtures.
+downloads, quiet). Tests: 163 (96 core, 56 analysis, 11 storage); 26/26 fixtures.
 
 ### 12.6 F-008: credential store access — done
 
@@ -707,21 +712,56 @@ the catalogue may claim:
    `HKLM\SYSTEM\ControlSet001\Control\SafeBoot` — a third of its event stream, attributed to the
    target. Registry mapping now matches exact names (`Registry/Open|Create|Close|SetValue|
    DeleteValue`) and ignores everything else.
-2. **User-mode registry writes are not in the stream at all.** With the noise gone it became
-   apparent that `reg add …\CurrentVersion\Run` and a PowerShell `Set-ItemProperty` on the same key
-   produce no `RegistrySetValue` record — the key name never appears in the raw registry records, and
-   the `Registry/SetValue` events that do arrive are kernel performance writes with `KeyName` empty
-   and `KeyHandle=0`, which the mapper correctly refuses to attribute. So `F-002` is in practice a
-   process-channel rule (the earlier "live 0 → 3 registry events" measurement was this noise), and
-   `docs/RULES.md` now says so instead of implying the registry path is proven.
+2. **The classic registry keyword cannot attribute a write, and that looked like blindness.** With
+   the noise gone it became apparent that `reg add …\CurrentVersion\Run` produced no
+   *attributable* `RegistrySetValue`: the write carries a handle that no earlier open had reported
+   (opens report either `0` or an unrelated value). It is not done yet — §12.8 shows the write was
+   in the stream all along, keyed by kernel object. The earlier "live 0 → 3 registry events"
+   measurement was the cache noise, so `F-002` was a process-channel rule until §12.8 landed.
 3. **Directory removal occasionally surfaces, file removal never has.** Five `del`s one second apart,
    and 26 `del`s in an earlier probe, produced zero file events; `rd /s /q` produced a `fileDelete`
    for the *directory* path in two runs out of three. Whatever the delete half of `F-006` becomes, it
    cannot be built on `del`.
 
-Tests: 156 (89 core, 56 analysis, 11 storage); 26/26 fixtures; `verify.ps1` and `verify.sh` green.
+Tests: 163 (96 core, 56 analysis, 11 storage); 26/26 fixtures; `verify.ps1` and `verify.sh` green.
 
-### 12.8 Next in Phase 3
+### 12.8 Registry writes, attributed through the kernel object
+
+The gap at §12.7 item 2 is closed. Two things were measured, in this order:
+
+1. The write **was** arriving. A `logman` capture of `Microsoft-Windows-Kernel-Registry` around a
+   `reg add` showed event 1 (CreateKey) carrying `RelativeName` = `Software\Microsoft\Windows\CurrentVersion\Run`
+   plus `KeyObject`, and event 5 (SetValue) carrying the same `KeyObject` and the value name. The
+   name and the write are in different records joined by a kernel pointer, which is why the classic
+   handle-based join never worked: the handle in a SetValue record is not the handle an Open
+   reported.
+2. The provider can be enabled from an ordinary elevated session next to the kernel keywords
+   (`EnableProvider("Microsoft-Windows-Kernel-Registry", Verbose, ulong.MaxValue)`), so no new
+   capture architecture was needed.
+
+The sensor now enables it when registry capture is on and maps ids 1/2 (open/create: object → key
+name), 5 (value write: object + value name → event) and 13 (object retired: forget it). Two details
+are load-bearing:
+
+- **Objects are reused.** The same pointer was measured belonging to `system\Setup` and later to
+  an unrelated NLS key, so a cached name is dropped when the kernel retires the object, and a write
+  whose object is unknown is dropped rather than guessed — the rule that already governs
+  unresolvable file paths.
+- **A relative name is composed with its named parent** and only when the parent name is absolute;
+  composing with a bare `S-1-5-21-…` produced paths that look absolute and are not. Anything joined
+  through the object table is emitted as `Observability.Inferred`.
+
+Verified live with two probes, both replayed afterwards: `reg add …Run /v ArgusSpike` produced
+`\REGISTRY\USER\<sid>\Software\Microsoft\Windows\CurrentVersion\Run\ArgusSpike` (Inferred) and `F-002`
+at 34.5 Suspicious with **two** detections (registry + command line), 0 gaps; and a write to
+`HKCU\Software\ArgusSpike` was recorded but stayed **Benign, 0 detections**, so the new
+channel does not put an autostart finding on ordinary application settings. `--self-test` now reports
+`registryProviderEnabled: true` and 4 registry events from its own probe, and warns if the provider
+cannot be enabled. Nine new mapper tests cover the join, the unknown object, the retired object, the
+relative-name composition, and MuiCache value names (which are themselves device paths — joining them
+with a separator produced a path that does not exist).
+
+### 12.9 Next in Phase 3
 
 The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
 aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use

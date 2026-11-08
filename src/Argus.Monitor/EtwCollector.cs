@@ -84,6 +84,27 @@ public sealed class EtwCollector : IDisposable
                 // FileIO/Create, TcpIp/Connect, Registry/SetValue and so on.
                 _session.Source.Kernel.All += static _ => { };
 
+                // The classic Registry keyword reports opens, queries and the kernel's own
+                // key-cache traffic, but its writes carry a handle that never matches a handle
+                // an Open reported (measured: Opens report 0 or an unrelated value). The
+                // manifest provider is the one that names a key and the object a value write
+                // went to, so registry writes need it as well.
+                if (_options.RegistryEvents)
+                {
+                    try
+                    {
+                        _session.EnableProvider(
+                            EtwEventMapper.RegistryManifestProvider,
+                            TraceEventLevel.Verbose,
+                            ulong.MaxValue);
+                        _stats.RegistryProviderEnabled = true;
+                    }
+                    catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or UnauthorizedAccessException)
+                    {
+                        _stats.RegistryProviderError = exception.GetType().Name;
+                    }
+                }
+
                 if (_options.DnsEvents)
                 {
                     try
@@ -231,6 +252,11 @@ public sealed class EtwCollector : IDisposable
         if (name.Contains("TcpIp", StringComparison.OrdinalIgnoreCase))
         {
             return _options.NetworkEvents;
+        }
+
+        if (data.ProviderName == EtwEventMapper.RegistryManifestProvider)
+        {
+            return _options.RegistryEvents;
         }
 
         if (name.Contains("Registry", StringComparison.OrdinalIgnoreCase))

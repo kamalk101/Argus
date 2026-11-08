@@ -117,6 +117,13 @@ public static class AgentSelfTest
             warnings.Add("DNS provider was not enabled: " + (stats.DnsError ?? "unknown reason"));
         }
 
+        if (stats.RegistryEvents > 0 && !stats.RegistryProviderEnabled)
+        {
+            // Registry writes are attributed through this provider; without it the channel
+            // reports opens and kernel cache traffic only.
+            warnings.Add("Registry manifest provider was not enabled: " + (stats.RegistryProviderError ?? "unknown reason"));
+        }
+
         if (stats.TcpTableAvailable)
         {
             checks.Add(("tcp-polling", true, "owner table poll succeeded"));
@@ -146,9 +153,11 @@ public static class AgentSelfTest
             {
                 stats.EtwStarted,
                 stats.DnsProviderEnabled,
+                stats.RegistryProviderEnabled,
                 stats.TcpTableAvailable,
                 stats.EtwError,
                 stats.DnsError,
+                stats.RegistryProviderError,
                 stats.EtwCallbacks,
                 stats.EtwFiltered,
                 stats.EventsSeen,

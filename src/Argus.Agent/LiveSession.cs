@@ -162,10 +162,12 @@ public sealed class LiveSession : IAsyncDisposable
             Environment.OSVersion.VersionString,
             stats.EtwStarted,
             stats.DnsProviderEnabled,
+            stats.RegistryProviderEnabled,
             stats.TcpTableAvailable,
             _monitor.CurrentLostEvents,
             stats.EtwError,
             stats.DnsError,
+            stats.RegistryProviderError,
             new MonitorCountersDto(
                 stats.EventsSeen,
                 stats.EventsForwarded,

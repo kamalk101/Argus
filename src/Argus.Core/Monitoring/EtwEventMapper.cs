@@ -16,6 +16,13 @@ public sealed class EtwEventMapper
 {
     private const int MaxFileKeyEntries = 100_000;
 
+    /// <summary>
+    /// Manifest registry provider. Its event ids are fixed and it is enabled separately from
+    /// the classic kernel keyword, so its records need their own branch.
+    /// </summary>
+    public const string RegistryManifestProvider = "Microsoft-Windows-Kernel-Registry";
+
+
     private readonly Func<string, string> _resolvePath;
     private readonly Dictionary<ulong, string> _fileKeys = [];
 
@@ -26,6 +33,18 @@ public sealed class EtwEventMapper
     private readonly Dictionary<(int Pid, ulong Handle), string> _registryKeys = [];
 
     private const int MaxRegistryKeys = 20_000;
+
+    /// <summary>
+    /// The manifest registry provider reports keys by kernel object pointer, not name: an
+    /// open names the key it produced, and the value write that follows names the object it
+    /// wrote to. Correlating the two is the only way a write can be attributed at all —
+    /// measured live, the classic handle in a SetValue record never matched a handle an
+    /// earlier Open had reported, because Opens report either 0 or an unrelated value.
+    /// </summary>
+    private readonly Dictionary<ulong, string> _registryObjects = [];
+
+    private const int MaxRegistryObjects = 50_000;
+
     private readonly Queue<ulong> _fileKeyOrder = [];
 
     public EtwEventMapper(Func<string, string>? resolvePath = null)
@@ -44,6 +63,11 @@ public sealed class EtwEventMapper
         // malformed payload as a mapping failure and a known-but-uninteresting kind as
         // simply unmapped. The collector is the boundary that keeps a bad record from
         // stopping collection.
+        if (record.Provider == RegistryManifestProvider)
+        {
+            return MapRegistryManifest(record);
+        }
+
         var name = record.EventName;
         if (name.Contains("Process", StringComparison.OrdinalIgnoreCase))
         {
@@ -450,6 +474,131 @@ public sealed class EtwEventMapper
         };
     }
 
+    /// <summary>
+    /// Maps the manifest registry provider, whose records are keyed by kernel object rather
+    /// than by name.
+    ///
+    /// Event ids measured live: 1 CreateKey, 2 OpenKey (both carry RelativeName and the
+    /// object they produced), 5 SetValue (carries the object and the value name), 13 the key
+    /// control block going away. Ids 1 and 2 are the only place a name appears, so they fill
+    /// an object table that later writes are resolved through, and id 13 empties it because
+    /// the kernel reuses those pointers — the same pointer was measured belonging to
+    /// "system\Setup" and, later, to an unrelated NLS key.
+    ///
+    /// A key reported relative to its parent ("Software\Microsoft\Windows\CurrentVersion    /// Run") is kept as reported and the event is marked Inferred: something tied the write to
+    /// that key through the kernel object, and the hive is not in the record to claim.
+    /// </summary>
+    private RawEvent? MapRegistryManifest(EtwRecord record)
+    {
+        switch (record.EventId)
+        {
+            case 1:
+            case 2:
+            {
+                var keyObject = FirstUInt64(record, "KeyObject");
+                var reported = FirstString(record, "RelativeName");
+                if (string.IsNullOrEmpty(reported))
+                {
+                    reported = FirstString(record, "BaseName");
+                }
+
+                if (keyObject is { } obj && obj != 0 && !string.IsNullOrEmpty(reported))
+                {
+                    // A key opened relative to its parent reports only the relative name, but
+                    // the parent is the BaseObject and was itself named when it was opened.
+                    // Composing them is what turns "Software\Microsoft\...\Run" into a path
+                    // that states which hive it is in.
+                    // Only an absolute parent name is used: composing with a bare "S-1-5-21-..."
+                    // produced paths that look absolute and are not.
+                    if (!reported.StartsWith('\\')
+                        && FirstUInt64(record, "BaseObject") is { } baseObject
+                        && _registryObjects.TryGetValue(baseObject, out var baseName)
+                        && baseName.StartsWith('\\'))
+                    {
+                        reported = baseName.TrimEnd('\\') + "\\" + reported;
+                    }
+
+                    RememberRegistryObject(obj, reported);
+                }
+
+                return null;
+            }
+
+            case 13:
+            {
+                if (FirstUInt64(record, "KeyObject") is { } gone && gone != 0)
+                {
+                    _registryObjects.Remove(gone);
+                }
+
+                return null;
+            }
+
+            case 5:
+            {
+                var reportedKey = FirstString(record, "KeyName");
+                if (string.IsNullOrEmpty(reportedKey)
+                    && FirstUInt64(record, "KeyObject") is { } writeObject
+                    && _registryObjects.TryGetValue(writeObject, out var fromObject))
+                {
+                    reportedKey = fromObject;
+                }
+
+                if (string.IsNullOrEmpty(reportedKey))
+                {
+                    // No name for this object: the key was opened before capture began, or the
+                    // open was not delivered. Dropping it is the same rule as everywhere else
+                    // — a write is not guessed at.
+                    return null;
+                }
+
+                var valueName = FirstString(record, "ValueName");
+                var target = string.IsNullOrEmpty(valueName)
+                    ? reportedKey
+                    : JoinValue(reportedKey, valueName);
+
+                return new RawEvent
+                {
+                    Ts = record.TimestampUtc,
+                    Kind = EventKind.RegistrySetValue,
+                    Pid = record.Pid,
+                    Tid = record.Tid,
+                    Target = target,
+                    Observability = Observability.Inferred,
+                    Source = EventSourceKind.Etw,
+                };
+            }
+
+            default:
+                return null;
+        }
+    }
+
+    private void RememberRegistryObject(ulong keyObject, string key)
+    {
+        _registryObjects[keyObject] = key;
+
+        if (_registryObjects.Count > MaxRegistryObjects)
+        {
+            _registryObjects.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Key path plus value name. Some value names are themselves absolute device paths
+    /// (the shell writes MuiCache entries named "\Device\HarddiskVolume2\...\cmd.exe"),
+    /// so the separator is added only when the value name does not already carry one.
+    /// </summary>
+    private static string JoinValue(string key, string? valueName)
+    {
+        if (string.IsNullOrEmpty(valueName))
+        {
+            return key;
+        }
+
+        return valueName[0] == '\\' ? key + valueName : key + "\\" + valueName;
+    }
+
     private static bool NameIs(string name, string expected) =>
         string.Equals(name, expected, StringComparison.OrdinalIgnoreCase);
 
@@ -508,7 +657,7 @@ public sealed class EtwEventMapper
         }
 
         var valueName = FirstString(record, "ValueName", "Value");
-        var target = string.IsNullOrEmpty(valueName) ? key : key + "\\" + valueName;
+        var target = JoinValue(key, valueName);
 
         return new RawEvent
         {

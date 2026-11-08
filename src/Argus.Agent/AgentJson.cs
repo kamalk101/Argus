@@ -89,10 +89,12 @@ public sealed record HealthDto(
     string Os,
     bool EtwStarted,
     bool DnsProviderEnabled,
+    bool RegistryProviderEnabled,
     bool TcpTableAvailable,
     long EtwLostEvents,
     string? EtwError,
     string? DnsError,
+    string? RegistryProviderError,
     MonitorCountersDto? Monitor,
     SessionStateDto? Session);
 
