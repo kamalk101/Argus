@@ -128,7 +128,44 @@ public sealed class CorrelationRuleTests
 
         var finding = Assert.Single(snapshot.Detections, d => d.RuleId == "X-002");
         Assert.Contains($"executed_path={PathKey.Canonicalize(planted)}", finding.Factors);
+        Assert.Contains("match_basis=path", finding.Factors);
         Assert.Equal(85, finding.Severity);
+    }
+
+    [Fact]
+    public void A_launch_with_no_resolved_path_still_correlates_when_the_writer_is_its_parent()
+    {
+        // Measured live: a short-lived payload started from Startup arrives with imagePath=null and
+        // observability=partial, because the metadata lookup loses the race with a process that exits
+        // in milliseconds. Requiring a resolved path meant the rule could never fire for the common
+        // case, so the fallback is the written file's name plus the writer being the parent.
+        var planted = $@"{StartupDir}\payload.exe";
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, planted, 1, effect: FileEffect.CreatedOrTruncated),
+            Fx.ProcessStart(8000, Fx.RootPid, "payload.exe", path: null, commandLine: null, seconds: 3),
+        ]);
+
+        var finding = Assert.Single(snapshot.Detections, d => d.RuleId == "X-002");
+        Assert.Contains("match_basis=name-and-parent", finding.Factors);
+        Assert.Contains("executed_path=(unresolved)", finding.Factors);
+    }
+
+    [Fact]
+    public void A_name_match_without_the_writer_as_parent_stays_quiet()
+    {
+        // Name alone is not a match: a differently parented process with the same file name could be
+        // any program on the machine, which is the false positive the path check exists to avoid.
+        var planted = $@"{StartupDir}\payload.exe";
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, planted, 1, effect: FileEffect.CreatedOrTruncated),
+            Fx.ProcessStart(8100, 9999, "payload.exe", path: null, commandLine: null, seconds: 3),
+        ]);
+
+        Assert.DoesNotContain("X-002", Fx.RulesOf(snapshot));
     }
 
     [Fact]
