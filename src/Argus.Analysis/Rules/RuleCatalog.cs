@@ -62,6 +62,9 @@ public sealed class RuleCatalog
             new CredentialStoreRule(),
             new BeaconingRule(active),
             new OutboundVolumeRule(active),
+            new UserWritableLaunchRule(),
+            new RepeatedFlagsRule(active),
+            new RecoveryTamperingRule(),
             new BarePublicIpRule(),
             new RiskyPortRule(),
         ];

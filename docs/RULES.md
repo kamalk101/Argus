@@ -2,7 +2,7 @@
 
 Generated view: `dotnet run --project src/Argus.Cli -- rules` (add `--json` for machine output).
 
-This is **15 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
+This is **18 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
 reason, counterfactual and at least two fixtures each.
 
 ## Shipped rules
@@ -23,6 +23,9 @@ reason, counterfactual and at least two fixtures each.
 | N-004 | Connection to a bare public address | 35 | network | T1095 | per-event |
 | P-002 | Unexpected command interpreter | 85 | process | T1059 | per-event |
 | P-003 | Interpreter with encoded or remote payload | 75 | process | T1218, T1027 | per-event |
+| P-004 | Executable launched from a user-writable directory | 45 | process | T1204 | per-event |
+| P-006 | Repeated launches of one program with different switches | 25 | process | T1082 | aggregated (600 s) |
+| P-007 | Shadow copy or recovery tampering | 80 | process | T1490 | per-event |
 | X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated |
 
 **How registry writes are attributed (measured).** The classic registry keyword names a key

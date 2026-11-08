@@ -41,6 +41,11 @@ public sealed record RuleSettings
     /// <summary>Coefficient of variation of the intervals that still counts as regular.</summary>
     public double BeaconMaxJitter { get; init; } = 0.15;
 
+    /// <summary>Distinct switches on one image before P-006 mentions the pattern.</summary>
+    public int RepeatedFlagsThreshold { get; init; } = 3;
+
+    public double RepeatedFlagsWindowSeconds { get; init; } = 600;
+
     /// <summary>Bytes to one public address within the window before N-003 reports a transfer.</summary>
     public long OutboundVolumeBytes { get; init; } = 20L * 1024 * 1024;
 
@@ -102,6 +107,8 @@ public sealed record RuleSettings
         RequirePositive(BeaconConnections, nameof(BeaconConnections));
         RequirePositive(BeaconWindowSeconds, nameof(BeaconWindowSeconds));
         RequirePositive(BeaconMinMeanIntervalSeconds, nameof(BeaconMinMeanIntervalSeconds));
+        RequirePositive(RepeatedFlagsThreshold, nameof(RepeatedFlagsThreshold));
+        RequirePositive(RepeatedFlagsWindowSeconds, nameof(RepeatedFlagsWindowSeconds));
         RequirePositive(OutboundVolumeBytes, nameof(OutboundVolumeBytes));
         RequirePositive(OutboundVolumeWindowSeconds, nameof(OutboundVolumeWindowSeconds));
 
