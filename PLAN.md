@@ -645,15 +645,15 @@ Correlator + window index, 22 rules with fixtures and reason templates, detectio
 
 **Progress:** the pipeline items (correlator, aggregation, scorer, counterfactuals) already exist from Phase 1; the remaining work is the rule catalogue. Done so far: file-write evidence now distinguishes a create from an open via the sensor's create disposition (`FileEffect`), which removed the `F-005` false positive on every `System32` binary open; `F-002` (Run/RunOnce), `F-003` (scheduled task) and `F-004` (mass file creation) are shipped with firing and quiet fixtures. 10 of 22 rules, 22 asserted fixtures, all four new detections verified live on the VM. Open from that work: `rules.json` threshold binding, and enabling ETW before the target launches so the first ~150 ms of a session is not lost. See `docs/HANDOFF.md` §12.
 
-### Phase 4 — Dashboard v1 (6 d) — Linux ✅ (browser verified)
+### Phase 4 — Dashboard v1 (6 d) — not started
 All 8 screens against replay/SSE, virtualisation, timeline, threat panel with evidence chain, search, keyboard nav, empty/error/disconnected states, dark theme, responsive ≥ 1280 px.
 **DoD:** Playwright passes on 8 routes; 100k-row fixture scrolls without jank; every event row exposes its observability badge; SSE reconnect recovers state.
 
-### Phase 5 — Windows end-to-end + reports (4 d) — Win ✅
+### Phase 5 — Windows end-to-end + reports (4 d) — not started
 Full run on Windows: launch → live dashboard → explorer drill-down → report export; behaviour-sim scenarios producing the expected detections; perf measurement (§10); benign corpus triage log; `docs/LIMITATIONS.md`.
 **DoD:** the §14 demo script runs start to finish on a clean Windows VM, twice, with identical verdicts; report opens self-contained and states gaps + limitations.
 
-### Phase 6 — ML advisory layer (5 d) — Linux ✅ + Win data
+### Phase 6 — ML advisory layer (5 d) — not started
 Feature builder, CSV export, ML.NET training project, calibration on corpus, shadow-mode UI, contribution explanations, `ml.influence` config + report disclosure.
 **DoD:** reported precision/recall per class on a held-out split; no verdict changes in `advisory` mode; blending gated on the measured precision threshold.
 
