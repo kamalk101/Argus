@@ -96,11 +96,24 @@ public sealed class CorrelationRuleTests
     [InlineData("0", DnsStatus.Success)]
     [InlineData("NOERROR", DnsStatus.Success)]
     [InlineData("1460", DnsStatus.NoAnswer)]
+    [InlineData("9005", DnsStatus.NoAnswer)]
+    [InlineData("9501", DnsStatus.NoAnswer)]
     [InlineData("REFUSED", DnsStatus.NoAnswer)]
     [InlineData(null, DnsStatus.Unknown)]
     [InlineData("", DnsStatus.Unknown)]
     public void Dns_status_parses_the_codes_the_resolver_reports(string? raw, DnsStatus expected) =>
         Assert.Equal(expected, DnsStatuses.Parse(raw));
+
+    [Fact]
+    public void An_unrecognised_status_is_unknown_rather_than_a_failed_lookup()
+    {
+        // Measured on Windows: every A (QueryType 1) response carries QueryStatus=87, including for
+        // names that resolve — example.com answered with its addresses through the AAAA query while
+        // its A record carried 87 and no results. Mapping unknown non-zero codes to NoAnswer invented
+        // a failure for lookups that had succeeded. Only codes with a known meaning may be mapped.
+        Assert.Equal(DnsStatus.Unknown, DnsStatuses.Parse("87"));
+        Assert.Equal(DnsStatus.Unknown, DnsStatuses.Parse("12345"));
+    }
 
     [Fact]
     public void A_payload_written_into_startup_and_then_run_correlates()

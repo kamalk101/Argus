@@ -19,7 +19,7 @@ public enum DnsStatus
     /// <summary>The resolver answered authoritatively that the name does not exist (NXDOMAIN).</summary>
     NameDoesNotExist,
 
-    /// <summary>The lookup did not complete: timeout, refused, server failure. Not evidence about the name.</summary>
+    /// <summary>The lookup did not return a usable answer: timeout, refused, server failure, or no records of the requested type. Not evidence about the name.</summary>
     NoAnswer,
 }
 
@@ -27,8 +27,16 @@ public static class DnsStatuses
 {
     /// <summary>
     /// Windows <c>DNS_QUERY_STATUS</c> codes, plus the textual spellings a manifest provider may
-    /// carry. Only the two NXDOMAIN codes map to <see cref="DnsStatus.NameDoesNotExist"/>; everything
-    /// else that is not an explicit success is an incomplete lookup.
+    /// carry. Only the two NXDOMAIN codes map to <see cref="DnsStatus.NameDoesNotExist"/>.
+    ///
+    /// An unrecognised numeric code becomes <see cref="DnsStatus.Unknown"/>, never
+    /// <see cref="DnsStatus.NoAnswer"/>. That is deliberate: the DNS-Client provider reports
+    /// <c>QueryStatus=87</c> on every <c>A</c> (QueryType 1) response, including for names that
+    /// resolve — measured on this machine, where `example.com` answered with its addresses through
+    /// the AAAA query while the A record carried 87 and no results. Treating every non-zero code as
+    /// "the lookup did not complete" recorded a false fact for lookups that had in fact succeeded,
+    /// and a rule reading it would have been reasoning from a fiction. Only codes whose meaning is
+    /// known are mapped; the rest are honestly unknown.
     /// </summary>
     public static DnsStatus Parse(string? value)
     {
@@ -56,21 +64,20 @@ public static class DnsStatuses
             case "0":
             case "NOERROR":
             case "SUCCESS":
-            case "NODATA":
                 return DnsStatus.Success;
 
+            case "1460":    // DNS_ERROR_RCODE_SERVER_FAILURE
+            case "9005":    // DNS_ERROR_RCODE_REFUSED
+            case "9501":    // DNS_INFO_NO_RECORDS: completed, but no records of that type
             case "TIMEOUT":
             case "REFUSED":
             case "SERVFAIL":
             case "SERVER_FAILURE":
-            case "1460":   // DNS_ERROR_RCODE_SERVER_FAILURE
-            case "9005":   // DNS_ERROR_RCODE_REFUSED
+            case "NODATA":
                 return DnsStatus.NoAnswer;
         }
 
-        // A numeric code that is none of the above is still a result: treat a non-zero numeric
-        // status as an incomplete lookup rather than dropping the record.
-        return long.TryParse(text, out _) ? DnsStatus.NoAnswer : DnsStatus.Unknown;
+        return DnsStatus.Unknown;
     }
 
     public static string Describe(DnsStatus status) => status switch

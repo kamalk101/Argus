@@ -133,6 +133,18 @@ together would let a flaky network look exactly like a domain-generation algorit
 **distinct** names per process, so one dead host retried forty times is quiet; fifteen candidates that
 were never registered is not.
 
+**What a live capture taught us about that status (measured).** Verifying N-005 on a real machine with
+18 unregistered names showed the first parser was wrong. The DNS-Client provider reports
+`QueryStatus=87` on **every** `A` (QueryType 1) response, including for names that resolve: in the same
+capture, `example.com` answered with its addresses through the AAAA record while its A record carried
+`87` and an empty `QueryResults`. The first version treated any unrecognised non-zero code as "the
+lookup did not complete", so 18 successful-or-failed A records were recorded as `NoAnswer` — a false
+fact in the contract, and exactly the kind of thing a later rule would reason from. Unrecognised codes
+are now `Unknown`, and only codes whose meaning is known are mapped: `0` is success, `9003` (and
+textual `NXDOMAIN`) is the one negative answer that counts, and `1460`/`9005`/`9501` are the
+incomplete-answer cases. The AAAA record carries the real outcome, which is why the rule still sees
+all 18 names.
+
 `X-002` pairs a persistence write with execution of **that same canonical path**. Matching on the file
 name instead would correlate every install where a helper shares a name with something in Startup, so
 the rule compares `PathKey`s and refuses to fire when either side is unresolved. It reads only a write

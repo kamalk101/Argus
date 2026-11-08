@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **232 tests** (96 core, 125 analysis, 11 storage), **47/47** asserted
+Current automated counts: **235 tests** (96 core, 128 analysis, 11 storage), **47/47** asserted
 replay scenarios, and **all 23 rules** in `PLAN.md` §6.3 shipped (`F-001` … `F-008`, `N-001` … `N-005`,
 `P-001` … `P-008`, `X-001`, `X-002`).
 
@@ -789,15 +789,26 @@ had nothing to sum. Both now map to `NetFlow` with `BytesOut`/`BytesIn`.
   so it cannot tell whether that address was resolved. It is documented as an ingredient, never as
   a lone finding.
 
-`N-005` (NXDOMAIN storm) was **not** shipped: the DNS status field sits only in the event's `Detail`
-JSON, and rules are not allowed to read facts from a blob. It needs a contract field first.
+`N-005` (NXDOMAIN storm) ships now that `DnsStatus` is a contract field rather than a value parked in
+`Detail`. `X-002` completed the catalogue: a Startup write paired with execution of that same canonical
+path.
 
 Verified live on the VM, each probe replayed afterwards:
 
 ```text
 beacon   6 TCP connects to 1.1.1.1:53, 10 s apart   -> N-002 + N-004, 1506 events, 0 gaps
 upload   24.1 MB to 172.66.0.218 in 387 sends       -> N-003 at 49.8 Suspicious, 0 gaps
+nxdomain 18 distinct unregistered .invalid names    -> N-005 at 30.2 Suspicious, 1331 events, 0 gaps
 ```
+
+The NXDOMAIN probe also caught a defect in the first `DnsStatus` parser, which is why it was worth
+running rather than trusting the fixtures. The DNS-Client provider reports `QueryStatus=87` on every
+`A` (QueryType 1) response, including for names that resolve -- in the same capture `example.com`
+returned its addresses through the AAAA query while its A record carried `87` and an empty
+`QueryResults`. The first mapping treated any unrecognised non-zero code as "the lookup did not
+complete", so 18 A records were recorded as `NoAnswer` when nothing of the sort had happened.
+Unrecognised codes are now `Unknown`; only `0`, `9003`, `1460`, `9005` and `9501` are interpreted. The
+rule counts the AAAA record, which carries the real outcome.
 
 New fixtures 27 (`beacon-callback`, fires; also trips N-004 and the suite says so), 28
 (`beacon-jittery-benign`: same endpoint, same count, irregular spacing and a lookup each time), 29
