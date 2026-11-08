@@ -52,6 +52,46 @@ internal static class Fx
         Source = EventSourceKind.Replay,
     };
 
+    /// <summary>A single TCP send or receive record, which is what volume rules count.</summary>
+    public static RawEvent Flow(int pid, string ip, long bytes, double seconds = 1, int port = 443, bool inbound = false) => new()
+    {
+        Ts = T0.AddSeconds(seconds),
+        Kind = EventKind.NetFlow,
+        Pid = pid,
+        RemoteIp = ip,
+        RemotePort = port,
+        Protocol = "tcp",
+        BytesOut = inbound ? null : bytes,
+        BytesIn = inbound ? bytes : null,
+        Source = EventSourceKind.Replay,
+    };
+
+    public static RawEvent Dns(int pid, string host, double seconds = 1, EventKind kind = EventKind.DnsQuery) => new()
+    {
+        Ts = T0.AddSeconds(seconds),
+        Kind = kind,
+        Pid = pid,
+        HostName = host,
+        Target = host,
+        Source = EventSourceKind.Replay,
+    };
+
+    /// <summary>Repeated connections to one endpoint at a fixed spacing.</summary>
+    public static IEnumerable<RawEvent> Beacon(
+        int count,
+        double startSeconds,
+        double intervalSeconds,
+        string ip = "203.0.113.7",
+        int port = 8443,
+        Func<int, double>? jitter = null)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var offset = startSeconds + i * intervalSeconds + (jitter is null ? 0 : jitter(i));
+            yield return NetConnect(RootPid, ip, port, offset);
+        }
+    }
+
     public static RawEvent RootStart() => ProcessStart(RootPid, 9999, "sample.exe", RootPath);
 
     /// <summary>

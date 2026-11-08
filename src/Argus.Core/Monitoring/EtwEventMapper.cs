@@ -435,6 +435,12 @@ public sealed class EtwEventMapper
             _ when name.Contains("Disconnect", StringComparison.OrdinalIgnoreCase)
                 || name.Contains("Close", StringComparison.OrdinalIgnoreCase) => EventKind.NetClose,
             _ when name.Contains("Connect", StringComparison.OrdinalIgnoreCase) => EventKind.NetConnect,
+
+            // A connection says where data is going, not how much went. Volume rules need the
+            // per-buffer send/receive records, which the same keyword already delivers.
+            _ when name.Contains("Send", StringComparison.OrdinalIgnoreCase) => EventKind.NetFlow,
+            _ when name.Contains("Recv", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Receive", StringComparison.OrdinalIgnoreCase) => EventKind.NetFlow,
             _ => (EventKind?)null,
         };
 
@@ -453,6 +459,20 @@ public sealed class EtwEventMapper
         var localIp = IpOf(FirstValue(record, "saddr", "srcAddr", "SourceAddr", "LocalAddr", "localAddr"));
         var localPort = FirstPort(record, "sport", "srcPort", "SourcePort", "LocalPort", "localPort");
 
+        long? bytesOut = null;
+        long? bytesIn = null;
+        if (kind == EventKind.NetFlow && FileSize(record) is { } size and > 0)
+        {
+            if (name.Contains("Send", StringComparison.OrdinalIgnoreCase))
+            {
+                bytesOut = size;
+            }
+            else
+            {
+                bytesIn = size;
+            }
+        }
+
         return new RawEvent
         {
             Ts = record.TimestampUtc,
@@ -462,6 +482,8 @@ public sealed class EtwEventMapper
             RemoteIp = remoteIp,
             RemotePort = remotePort,
             Protocol = "tcp",
+            BytesOut = bytesOut,
+            BytesIn = bytesIn,
             Detail = localIp is null
                 ? null
                 : JsonSerializer.Serialize(new Dictionary<string, string?>

@@ -2,7 +2,7 @@
 
 Generated view: `dotnet run --project src/Argus.Cli -- rules` (add `--json` for machine output).
 
-This is **12 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
+This is **15 of the 23 rules** in `PLAN.md` §6.3 (the plan calls the catalogue ~22). The rest land in the same contract — one rule,
 reason, counterfactual and at least two fixtures each.
 
 ## Shipped rules
@@ -17,9 +17,12 @@ reason, counterfactual and at least two fixtures each.
 | F-004 | Mass file creation | 55 | file | T1105, T1486 | aggregated (60 s) |
 | F-005 | Write to a system location | 65 | file | T1543, T1574 | per-event |
 | F-006 | Destructive rename burst (ransomware shape) | 85 | file | T1486 | aggregated (60 s) |
-| F-008 | Credential store accessed | 70 | file | T1555 | per-event |
 | F-007 | Executable payload dropped in a writable location | 50 | file | T1105 | per-event |
+| F-008 | Credential store accessed | 70 | file | T1555 | per-event |
 | N-001 | Connection to a risky service port | 45 | network | T1021 | per-event |
+| N-002 | Periodic callbacks to one endpoint | 60 | network | T1071 | aggregated (10 min) |
+| N-003 | Large outbound transfer to one address | 65 | network | T1041 | aggregated (60 s) |
+| N-004 | Connection to a bare public address | 35 | network | T1095 | per-event |
 | X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated (60 s) |
 
 **How registry writes are attributed (measured).** The classic registry keyword names a key
@@ -66,6 +69,34 @@ be replayed cannot be shown to work twice.
 Two limits are worth stating plainly. It only sees reads and opens, so a credential store reached
 over the network, or through a service that is out of scope, is invisible. And an un-attributable
 read — a path that could not be resolved — produces nothing rather than a guess.
+
+### The network cluster: three signals, none of them a verdict
+
+`N-002`, `N-003` and `N-004` describe different shapes of the same problem — traffic that leaves for
+somewhere the user never chose — and each is deliberately narrow:
+
+- **`N-002` measures regularity, not count.** For each process and endpoint it reads the connection
+  times out of the correlation index and computes the coefficient of variation of the intervals
+  (standard deviation over mean). Six callbacks at 30 s with a 2 s spread is 6.7 % and fires; a user
+  clicking around is far above 15 % and does not. Connections faster than one per five seconds are
+  not counted at all: a burst is load, not a timer.
+- **`N-003` measures concentration, not volume.** Twenty megabytes to *one* public address inside a
+  minute, summed from the send records; the same 22 MB spread over eleven addresses stays quiet, as
+  does any transfer to a private address. Uploads, backups and video calls move this much routinely,
+  which is why it is severity 65 and meant to sit next to what was written and where.
+- **`N-004` is the weakest and says so.** The sensor records DNS queries, not answers, so the rule
+  cannot check whether *that* address was resolved — only whether the process asked for any name in
+  the previous two minutes. Anything using its own resolver, a cached address or DNS-over-HTTPS looks
+  like a hardcoded callback. Severity 35, and it should never appear as the only finding in a report.
+
+`N-005` (NXDOMAIN storm) is **not** shipped: the DNS-Client record carries a status field that is
+only parked in the event's `Detail` blob, and rules are not allowed to read facts from a JSON blob.
+Shipping it needs a first-class field in the event contract, which is a schema change rather than a
+rule.
+
+Volume rules needed one sensor addition: `TcpIp/Send` and `TcpIp/Recv` were being dropped, because a
+connection record says where data is going, not how much went. Both now map to `NetFlow` with
+`BytesOut`/`BytesIn`.
 
 ### F-006: what it counts, and what it cannot see
 

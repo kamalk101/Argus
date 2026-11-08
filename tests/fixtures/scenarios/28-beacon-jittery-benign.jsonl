@@ -1,0 +1,26 @@
+{"$meta":{"name":"beacon-jittery-benign","description":"Twelve connections to one endpoint with wide and irregular spacing, each preceded by a name lookup. Same volume as the beacon fixture, none of its regularity.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":[],"absentRules":["N-002","N-004"],"band":"Benign","maxDetections":0}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:00:02.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:05.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:00:05.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:46.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:00:46.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:53.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:00:53.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:02:21.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:02:21.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:02:33.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:02:33.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:04:43.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:04:43.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:04:48.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:04:48.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:05:49.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:05:49.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:06:08.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:06:08.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:07:43.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:07:43.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:07:51.000Z","kind":"dnsQuery","pid":4312,"hostName":"api.example.test","target":"api.example.test","source":"replay"}
+{"ts":"2026-05-01T10:07:51.500Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}

@@ -1,0 +1,14 @@
+{"$meta":{"name":"beacon-callback","description":"An application calls one endpoint every 30 seconds, twelve times. Regular spacing is the signal: N-002 fires once per six callbacks.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":["N-002"],"absentRules":["N-003"],"band":"Suspicious","minScore":15,"maxDetections":2}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:00:32.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:01:02.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:01:32.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:02:02.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:02:32.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:03:02.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:03:32.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:04:02.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:04:32.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:05:02.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}
+{"ts":"2026-05-01T10:05:32.000Z","kind":"netConnect","pid":4312,"remoteIp":"203.0.113.7","remotePort":8443,"protocol":"tcp","source":"replay"}

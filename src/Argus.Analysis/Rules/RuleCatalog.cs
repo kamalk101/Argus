@@ -53,6 +53,9 @@ public sealed class RuleCatalog
             new MassFileCreationRule(),
             new DestructiveRenameBurstRule(),
             new CredentialStoreRule(),
+            new BeaconingRule(),
+            new OutboundVolumeRule(),
+            new BarePublicIpRule(),
             new RiskyPortRule(),
         ];
 

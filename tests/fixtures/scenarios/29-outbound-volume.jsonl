@@ -1,0 +1,17 @@
+{"$meta":{"name":"outbound-volume","description":"An application sends 28 MB to one public address in under a minute: 14 send records of 2 MB. N-003 fires once, at the 20 MB crossing.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":["N-003"],"absentRules":["N-002"],"band":"Suspicious","minScore":12,"maxDetections":1}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.000Z","kind":"dnsQuery","pid":4312,"hostName":"upload.example.test","target":"upload.example.test","source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:04.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:05.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:06.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:07.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:08.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:09.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:10.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:11.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:12.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:13.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:14.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}
+{"ts":"2026-05-01T10:00:15.000Z","kind":"netFlow","pid":4312,"remoteIp":"198.51.100.44","remotePort":443,"protocol":"tcp","bytesOut":2097152,"source":"replay"}

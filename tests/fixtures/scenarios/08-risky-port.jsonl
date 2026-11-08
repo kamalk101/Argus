@@ -1,4 +1,5 @@
 {"$meta":{"name":"risky-port","description":"An application connects to SMB on a public address. N-001 fires as a signal, not a verdict.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":["N-001"],"absentRules":["X-001"],"band":"Suspicious","minScore":8,"maxDetections":1}}}
 {"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:01.000Z","kind":"dnsQuery","pid":4312,"hostName":"files.example.test","target":"files.example.test","source":"replay"}
 {"ts":"2026-05-01T10:00:02.000Z","kind":"netConnect","pid":4312,"remoteIp":"198.51.100.9","remotePort":445,"protocol":"tcp","source":"replay"}
 {"ts":"2026-05-01T10:00:06.000Z","kind":"netClose","pid":4312,"remoteIp":"198.51.100.9","remotePort":445,"protocol":"tcp","source":"replay"}

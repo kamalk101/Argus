@@ -86,9 +86,9 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **163 tests** (96 core, 56 analysis, 11 storage), **26/26** asserted
-replay scenarios, 12 of the 23 catalogued rules shipped (`F-001` … `F-008`, `N-001`, `P-002`,
-`P-003`, `X-001`).
+Current automated counts: **172 tests** (96 core, 65 analysis, 11 storage), **30/30** asserted
+replay scenarios, 15 of the 23 catalogued rules shipped (`F-001` … `F-008`, `N-001` … `N-004`,
+`P-002`, `P-003`, `X-001`).
 
 ## 4. Architecture and data flow
 
@@ -674,7 +674,7 @@ final) is excluded because it is the commonest extension change on a desktop. Ve
 a probe renaming 12 files across 8 directories produced `F-006` at 20.5 Suspicious with 0 gaps,
 and replay of the same recording reproduces it. New fixtures 23 (`rename-burst-ransomware`,
 fires) and 24 (`bulk-rename-benign`: 60 in-folder renames with the extension kept plus 12 finished
-downloads, quiet). Tests: 163 (96 core, 56 analysis, 11 storage); 26/26 fixtures.
+downloads, quiet). Tests: 172 (96 core, 65 analysis, 11 storage); 30/30 fixtures.
 
 ### 12.6 F-008: credential store access — done
 
@@ -761,7 +761,43 @@ cannot be enabled. Nine new mapper tests cover the join, the unknown object, the
 relative-name composition, and MuiCache value names (which are themselves device paths — joining them
 with a separator produced a path that does not exist).
 
-### 12.9 Next in Phase 3
+### 12.9 Network cluster: N-002, N-003, N-004
+
+Three rules, one sensor addition. `TcpIp/Send` and `TcpIp/Recv` were being dropped by the
+network mapper: a connect record says where data is going, never how much went, so a volume rule
+had nothing to sum. Both now map to `NetFlow` with `BytesOut`/`BytesIn`.
+
+- **`N-002` regular callbacks (60, T1071).** Reads connection times for one (pid, endpoint) out of
+  the correlation index, requires 6+ within 10 minutes, a mean interval of at least 5 s, and a
+  coefficient of variation of the intervals below 15 %. Fires once per six callbacks. Intervals are
+  recomputed from the index every time, so there is no rule-side accumulator to drift and replay
+  reproduces the verdict.
+- **`N-003` outbound concentration (65, T1041).** Sums `BytesOut` to one public address over 60 s and
+  fires per 20 MB crossing. Private addresses are excluded, and 22 MB spread over eleven addresses
+  stays quiet — the rule is about one destination, not about being large.
+- **`N-004` bare public address (35, T1095).** Connects to a public address with no DNS query by that
+  process in the previous two minutes. Deliberately weak: the sensor records queries, not answers,
+  so it cannot tell whether that address was resolved. It is documented as an ingredient, never as
+  a lone finding.
+
+`N-005` (NXDOMAIN storm) was **not** shipped: the DNS status field sits only in the event's `Detail`
+JSON, and rules are not allowed to read facts from a blob. It needs a contract field first.
+
+Verified live on the VM, each probe replayed afterwards:
+
+```text
+beacon   6 TCP connects to 1.1.1.1:53, 10 s apart   -> N-002 + N-004, 1506 events, 0 gaps
+upload   24.1 MB to 172.66.0.218 in 387 sends       -> N-003 at 49.8 Suspicious, 0 gaps
+```
+
+New fixtures 27 (`beacon-callback`, fires; also trips N-004 and the suite says so), 28
+(`beacon-jittery-benign`: same endpoint, same count, irregular spacing and a lookup each time), 29
+(`outbound-volume`, fires at the 20 MB crossing) and 30 (`volume-spread-benign`: 22 MB over eleven
+addresses plus 6 MB to a LAN server). Fixture 08 (`risky-port`) gained a DNS query, because the
+bare-address connection it models would otherwise trip N-004 — which it did, in the suite, before
+the fixture was made to match what the description claimed.
+
+### 12.10 Next in Phase 3
 
 The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
 aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use

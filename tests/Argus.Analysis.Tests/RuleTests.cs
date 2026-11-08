@@ -505,6 +505,129 @@ public sealed class RuleTests
     }
 
     [Fact]
+    public void Regular_callbacks_to_one_endpoint_are_flagged()
+    {
+        var events = new List<RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.Beacon(count: 12, startSeconds: 1, intervalSeconds: 30));
+
+        var (snapshot, _) = Fx.Run(events);
+
+        var n002 = snapshot.Detections.Single(d => d.RuleId == "N-002");
+        Assert.Equal(2, n002.EventCount);
+
+        // Factors describe the latest crossing: the twelfth callback.
+        Assert.Contains("connections=12", n002.Factors);
+        Assert.Contains("mean_interval_seconds=30", n002.Factors);
+        Assert.Contains("jitter_percent=0", n002.Factors);
+    }
+
+    [Fact]
+    public void Irregular_connections_to_one_endpoint_are_not_beacons()
+    {
+        // Same endpoint, same count: only the spacing differs, which is the whole signal.
+        var events = new List<RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.Beacon(count: 12, startSeconds: 1, intervalSeconds: 30, jitter: i => (i % 3) * 17));
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("N-002", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void A_fast_burst_is_not_a_beacon()
+    {
+        // Ten connections in one second is a page load, not a timer.
+        var events = new List<RawEvent> { Fx.RootStart() };
+        events.AddRange(Fx.Beacon(count: 12, startSeconds: 1, intervalSeconds: 0.1));
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("N-002", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void A_large_upload_to_one_public_address_is_flagged()
+    {
+        var events = new List<RawEvent> { Fx.RootStart() };
+        for (var i = 0; i < 12; i++)
+        {
+            events.Add(Fx.Flow(Fx.RootPid, "203.0.113.9", 2 * 1024 * 1024, 1 + i));
+        }
+
+        var (snapshot, _) = Fx.Run(events);
+
+        // One finding, at the crossing: the tenth 2 MB send reaches 20 MB exactly and is the
+        // only finding in the transfer — the two sends after it are not a second crossing.
+        var n003 = snapshot.Detections.Single(d => d.RuleId == "N-003");
+        Assert.Contains("crossings=1", n003.Factors);
+        Assert.Contains("megabytes=20", n003.Factors);
+        Assert.Contains("remote_ip=203.0.113.9", n003.Factors);
+    }
+
+    [Fact]
+    public void Volume_spread_over_several_addresses_is_not_one_transfer()
+    {
+        var events = new List<RawEvent> { Fx.RootStart() };
+        for (var i = 0; i < 12; i++)
+        {
+            events.Add(Fx.Flow(Fx.RootPid, $"203.0.113.{10 + i}", 2 * 1024 * 1024, 1 + i));
+        }
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("N-003", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Volume_to_a_private_address_is_not_exfiltration_evidence()
+    {
+        var events = new List<RawEvent> { Fx.RootStart() };
+        for (var i = 0; i < 12; i++)
+        {
+            events.Add(Fx.Flow(Fx.RootPid, "10.0.0.5", 3 * 1024 * 1024, 1 + i));
+        }
+
+        var (snapshot, _) = Fx.Run(events);
+
+        Assert.DoesNotContain("N-003", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Connecting_to_a_bare_public_address_is_flagged()
+    {
+        var (snapshot, _) = Fx.Run([
+            Fx.RootStart(),
+            Fx.NetConnect(Fx.RootPid, "198.51.100.20", 4443, 5),
+        ]);
+
+        var n004 = snapshot.Detections.Single(d => d.RuleId == "N-004");
+        Assert.Contains("dns_queries_in_window=0", n004.Factors);
+    }
+
+    [Fact]
+    public void A_name_lookup_before_connecting_suppresses_the_bare_address_finding()
+    {
+        var (snapshot, _) = Fx.Run([
+            Fx.RootStart(),
+            Fx.Dns(Fx.RootPid, "example.test", 2),
+            Fx.NetConnect(Fx.RootPid, "198.51.100.20", 4443, 3),
+        ]);
+
+        Assert.DoesNotContain("N-004", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Private_addresses_are_not_bare_public_connections()
+    {
+        var (snapshot, _) = Fx.Run([
+            Fx.RootStart(),
+            Fx.NetConnect(Fx.RootPid, "10.1.2.3", 445, 2),
+        ]);
+
+        Assert.DoesNotContain("N-004", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
     public void Reading_another_programs_credential_store_is_flagged()
     {
         var loginData = @"C:\Users\kamal\AppData\Local\Google\Chrome\User Data\Default\Login Data";
