@@ -1,0 +1,7 @@
+{"$meta":{"name":"scheduled-task-query-benign","description":"An application lists its scheduled tasks and deletes one it installed earlier. Same tool as the creation fixture, no registration: F-003 must stay quiet.","rootPid":4312,"rootImagePath":"C:\\argus-test\\sample.exe","expect":{"rules":[],"absentRules":["F-003","F-001","F-002"],"band":"Benign","maxDetections":0}}}
+{"ts":"2026-05-01T10:00:00.000Z","kind":"processStart","pid":4312,"parentPid":9999,"imageName":"sample.exe","imagePath":"C:\\argus-test\\sample.exe","source":"replay"}
+{"ts":"2026-05-01T10:00:02.000Z","kind":"processStart","pid":5130,"parentPid":4312,"imageName":"schtasks.exe","imagePath":"C:\\Windows\\System32\\schtasks.exe","commandLine":"schtasks /query /tn \"Argus Updater\"","source":"replay"}
+{"ts":"2026-05-01T10:00:03.000Z","kind":"processStop","pid":5130,"source":"replay"}
+{"ts":"2026-05-01T10:00:04.000Z","kind":"processStart","pid":5140,"parentPid":4312,"imageName":"schtasks.exe","imagePath":"C:\\Windows\\System32\\schtasks.exe","commandLine":"schtasks /delete /tn \"Argus Updater\" /f","source":"replay"}
+{"ts":"2026-05-01T10:00:05.000Z","kind":"processStop","pid":5140,"source":"replay"}
+{"ts":"2026-05-01T10:00:06.000Z","kind":"fileRead","pid":5140,"target":"C:\\Windows\\System32\\Tasks\\Argus Updater","bytesIn":1024,"source":"replay"}

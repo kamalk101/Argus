@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **172 tests** (96 core, 65 analysis, 11 storage), **30/30** asserted
+Current automated counts: **172 tests** (96 core, 65 analysis, 11 storage), **32/32** asserted
 replay scenarios, 15 of the 23 catalogued rules shipped (`F-001` … `F-008`, `N-001` … `N-004`,
 `P-002`, `P-003`, `X-001`).
 
@@ -674,7 +674,7 @@ final) is excluded because it is the commonest extension change on a desktop. Ve
 a probe renaming 12 files across 8 directories produced `F-006` at 20.5 Suspicious with 0 gaps,
 and replay of the same recording reproduces it. New fixtures 23 (`rename-burst-ransomware`,
 fires) and 24 (`bulk-rename-benign`: 60 in-folder renames with the extension kept plus 12 finished
-downloads, quiet). Tests: 172 (96 core, 65 analysis, 11 storage); 30/30 fixtures.
+downloads, quiet). Tests: 172 (96 core, 65 analysis, 11 storage); 32/32 fixtures.
 
 ### 12.6 F-008: credential store access — done
 
@@ -792,10 +792,12 @@ upload   24.1 MB to 172.66.0.218 in 387 sends       -> N-003 at 49.8 Suspicious,
 
 New fixtures 27 (`beacon-callback`, fires; also trips N-004 and the suite says so), 28
 (`beacon-jittery-benign`: same endpoint, same count, irregular spacing and a lookup each time), 29
-(`outbound-volume`, fires at the 20 MB crossing) and 30 (`volume-spread-benign`: 22 MB over eleven
-addresses plus 6 MB to a LAN server). Fixture 08 (`risky-port`) gained a DNS query, because the
-bare-address connection it models would otherwise trip N-004 — which it did, in the suite, before
-the fixture was made to match what the description claimed.
+(`outbound-volume`, fires at the 20 MB crossing), 30 (`volume-spread-benign`: 22 MB over eleven
+addresses plus 6 MB to a LAN server), 31 (`bare-public-address`, N-004 on its own at low severity)
+and 32 (`scheduled-task-query-benign`, the quiet half `F-003` was missing: listing and deleting a
+task is not registering one). Fixture 08 (`risky-port`) gained a DNS query, because the bare-address
+connection it models would otherwise trip N-004 — which it did, in the suite, before the fixture was
+made to match what the description claimed.
 
 ### 12.10 Next in Phase 3
 
