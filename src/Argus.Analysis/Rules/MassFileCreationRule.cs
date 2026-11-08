@@ -12,12 +12,16 @@ using Argus.Core.Paths;
 /// Counted from the correlation index, never from hidden rule state: replay stays
 /// deterministic and the count is the same one the evidence panel can show.
 /// </summary>
-public sealed class MassFileCreationRule : IEventRule
+public sealed class MassFileCreationRule : IEventRule, IWindowedRule
 {
-    /// <summary>Creates within the window that make the rate itself worth reporting.</summary>
-    public const int Threshold = 200;
+    private readonly RuleSettings _settings;
 
-    public static readonly TimeSpan Window = TimeSpan.FromSeconds(60);
+    public MassFileCreationRule(RuleSettings? settings = null) => _settings = settings ?? RuleSettings.Default;
+
+    /// <summary>Creates within the window that make the rate itself worth reporting.</summary>
+    public int Threshold => _settings.MassFileCreationCount;
+
+    public TimeSpan Window => TimeSpan.FromSeconds(_settings.MassFileCreationWindowSeconds);
 
     public RuleMetadata Metadata { get; } = new(
         "F-004",
@@ -70,6 +74,7 @@ public sealed class MassFileCreationRule : IEventRule
             Factors =
             [
                 $"creates_in_window={count}",
+                $"threshold={Threshold}",
                 $"window_seconds={(int)Window.TotalSeconds}",
                 $"per_second={perSecond:0.0}",
                 $"latest={current.PathKey}",

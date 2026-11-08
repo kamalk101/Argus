@@ -3,6 +3,7 @@ namespace Argus.Agent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Argus.Analysis.Rules;
 using Argus.Core.Paths;
 using Argus.Monitor;
 using Argus.Storage;
@@ -25,6 +26,7 @@ public sealed class SessionManager : IAsyncDisposable
 
     private readonly SseHub _hub;
     private readonly AgentOptions _options;
+    private readonly RuleSettings _ruleSettings;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<Guid, LiveSession> _sessions = [];
     private readonly Dictionary<Guid, SessionDatabase> _databases = [];
@@ -34,6 +36,9 @@ public sealed class SessionManager : IAsyncDisposable
     {
         _hub = hub;
         _options = options;
+        // Loaded once, at startup: a threshold file that cannot be read or validated should stop
+        // the agent here, not halfway through a live session.
+        _ruleSettings = options.RulesPath is { } rulesPath ? RuleSettings.Load(rulesPath) : RuleSettings.Default;
     }
 
     public LiveSession? Active => _sessions.Values.FirstOrDefault(session => session.Status is "running" or "stopping");
@@ -176,7 +181,8 @@ public sealed class SessionManager : IAsyncDisposable
                     dbPath,
                     recordPath,
                     _hub,
-                    SensitivePathCatalog.Default());
+                    SensitivePathCatalog.Default(),
+                    _ruleSettings);
 
                 session.Start();
                 _sessions[id] = session;

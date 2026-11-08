@@ -31,7 +31,14 @@ public sealed record SessionStateDto(
     double Score,
     double PeakScore,
     string? DatabasePath,
-    string? RecordPath);
+    string? RecordPath,
+    CoverageDto Coverage);
+
+/// <summary>
+/// What the sensor could not see, published beside every verdict. A consumer that renders the
+/// score without this can present an incomplete session as a clean one.
+/// </summary>
+public sealed record CoverageDto(bool Complete, int Gaps, IReadOnlyList<string> Reasons, string Statement);
 
 public sealed record DetectionDto(
     string Key,

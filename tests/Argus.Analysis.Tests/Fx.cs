@@ -1,6 +1,7 @@
 namespace Argus.Analysis.Tests;
 
 using Argus.Analysis.Pipeline;
+using Argus.Analysis.Rules;
 using Argus.Core.Events;
 using Argus.Core.Paths;
 using Argus.Core.Risk;
@@ -172,7 +173,8 @@ internal static class Fx
         IEnumerable<RawEvent> events,
         TimeSpan? mergeWindow = null,
         RiskOptions? risk = null,
-        string? rootImagePath = null)
+        string? rootImagePath = null,
+        RuleSettings? rules = null)
     {
         var pipeline = new SessionPipeline(new SessionPipelineOptions
         {
@@ -182,6 +184,7 @@ internal static class Fx
             Catalog = Catalog,
             MergeWindow = mergeWindow ?? TimeSpan.FromMinutes(5),
             Risk = risk ?? RiskOptions.Default,
+            Rules = RuleCatalog.CreateDefault(rules),
         });
 
         var seen = new List<BehaviorEvent>();

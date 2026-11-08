@@ -17,18 +17,22 @@ using Argus.Core.Network;
 /// Counted from the correlation index rather than hidden rule state, so replay of a recording
 /// produces the same verdict and a rule change is visible in the fixture suite.
 /// </summary>
-public sealed class BeaconingRule : IEventRule
+public sealed class BeaconingRule : IEventRule, IWindowedRule
 {
-    public static readonly TimeSpan Window = TimeSpan.FromMinutes(10);
+    private readonly RuleSettings _settings;
+
+    public BeaconingRule(RuleSettings? settings = null) => _settings = settings ?? RuleSettings.Default;
+
+    public TimeSpan Window => TimeSpan.FromSeconds(_settings.BeaconWindowSeconds);
 
     /// <summary>Six callbacks is the smallest sample where "regular" means anything.</summary>
-    public const int Threshold = 6;
+    public int Threshold => _settings.BeaconConnections;
 
     /// <summary>Below this mean interval, a burst of connections is load, not a timer.</summary>
-    public const double MinMeanIntervalSeconds = 5;
+    public double MinMeanIntervalSeconds => _settings.BeaconMinMeanIntervalSeconds;
 
     /// <summary>Intervals within ±15 % of their mean: the catalogue's low-jitter criterion.</summary>
-    public const double MaxJitter = 0.15;
+    public double MaxJitter => _settings.BeaconMaxJitter;
 
     public RuleMetadata Metadata { get; } = new(
         "N-002",
@@ -114,6 +118,7 @@ public sealed class BeaconingRule : IEventRule
                 $"span_seconds={span.ToString("0", CultureInfo.InvariantCulture)}",
                 $"mean_interval_seconds={mean.ToString("0.##", CultureInfo.InvariantCulture)}",
                 $"jitter_percent={(jitter * 100).ToString("0.#", CultureInfo.InvariantCulture)}",
+                $"threshold={Threshold}",
                 $"window_seconds={(int)Window.TotalSeconds}",
             ],
             TargetPid = current.Pid,

@@ -16,11 +16,15 @@ using Argus.Core.Network;
 /// Summed from the send records in the correlation index, so the count is reproducible from a
 /// recording and there is no rule-side accumulator to drift.
 /// </summary>
-public sealed class OutboundVolumeRule : IEventRule
+public sealed class OutboundVolumeRule : IEventRule, IWindowedRule
 {
-    public static readonly TimeSpan Window = TimeSpan.FromSeconds(60);
+    private readonly RuleSettings _settings;
 
-    public const long ThresholdBytes = 20L * 1024 * 1024;
+    public OutboundVolumeRule(RuleSettings? settings = null) => _settings = settings ?? RuleSettings.Default;
+
+    public TimeSpan Window => TimeSpan.FromSeconds(_settings.OutboundVolumeWindowSeconds);
+
+    public long ThresholdBytes => _settings.OutboundVolumeBytes;
 
     public RuleMetadata Metadata { get; } = new(
         "N-003",
@@ -99,6 +103,7 @@ public sealed class OutboundVolumeRule : IEventRule
                 $"megabytes={megabytes.ToString("0.#", CultureInfo.InvariantCulture)}",
                 $"send_records={records}",
                 $"crossings={crossings}",
+                $"threshold_bytes={ThresholdBytes}",
                 $"window_seconds={(int)Window.TotalSeconds}",
             ],
             TargetPid = current.Pid,

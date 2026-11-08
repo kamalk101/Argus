@@ -16,15 +16,17 @@ public static class Program
         argus — real-time behaviour analysis harness
 
         Usage:
-          argus replay <file-or-dir> [--assert] [--json] [--db <path>] [--verbose]
-          argus rules [--json]
+          argus replay <file-or-dir> [--assert] [--json] [--db <path>] [--verbose] [--rules <settings.json>]
+          argus rules [--json] [--markdown]
           argus selftest [--fixtures <dir>] [--load <count>]
 
         Commands:
           replay     Run recorded scenarios through the production pipeline.
                      --assert  fail with exit code 1 when expectations do not hold
                      --db      persist sessions, events, detections and scores to SQLite
+                     --rules   override the tunable thresholds from a JSON file
           rules      Print the shipped rule catalogue
+                     --markdown  emit the catalogue table that docs/RULES.md carries
           selftest   Replay every fixture and assert the expectations, then measure
                      synthetic pipeline throughput
 
@@ -33,7 +35,7 @@ public static class Program
 
     private static readonly HashSet<string> BooleanFlags = new(StringComparer.OrdinalIgnoreCase)
     {
-        "assert", "json", "verbose", "help",
+        "assert", "json", "markdown", "verbose", "help",
     };
 
     public static int Main(string[] args)
@@ -80,6 +82,7 @@ public static class Program
             throw new UsageException($"No .jsonl scenarios found in {target}.");
         }
 
+        var ruleSettings = arguments.Value("rules") is { } settingsPath ? RuleSettings.Load(settingsPath) : null;
         var assertionMode = arguments.HasFlag("assert");
         var json = arguments.HasFlag("json");
         var databasePath = arguments.Value("db");
@@ -97,7 +100,7 @@ public static class Program
         {
             foreach (var scenario in scenarios)
             {
-                var run = ScenarioRunner.Run(scenario);
+                var run = ScenarioRunner.Run(scenario, rules: ruleSettings);
                 var assertion = ScenarioRunner.Verify(run);
                 if (!assertion.Passed)
                 {
@@ -120,6 +123,11 @@ public static class Program
                     }
 
                     Console.WriteLine($"    score: {snapshot.Risk.Explanation}");
+
+                    if (!snapshot.Coverage.Complete)
+                    {
+                        Console.WriteLine($"    coverage: {snapshot.Coverage.Statement}");
+                    }
                 }
 
                 if (!assertion.Passed)
@@ -149,6 +157,13 @@ public static class Program
                         events = d.EventCount,
                     }),
                     gaps = snapshot.Gaps.Count,
+                    coverage = new
+                    {
+                        complete = snapshot.Coverage.Complete,
+                        gaps = snapshot.Coverage.Gaps,
+                        reasons = snapshot.Coverage.Reasons,
+                        statement = snapshot.Coverage.Statement,
+                    },
                     passed = assertion.Passed,
                     failures = assertion.Failures,
                 });
@@ -186,7 +201,8 @@ public static class Program
                 severity = rule.Metadata.Severity,
                 categories = EvidenceCategories.Describe(rule.Metadata.Categories),
                 mitre = rule.Metadata.Mitre,
-                kind = rule is ICorrelatedRule ? "correlated" : "per-event",
+                kind = KindOf(rule),
+                windowSeconds = rule is IWindowedRule windowed ? (int)windowed.Window.TotalSeconds : (int?)null,
                 description = rule.Metadata.Description,
             })
             .ToList();
@@ -194,6 +210,19 @@ public static class Program
         if (arguments.HasFlag("json"))
         {
             Console.WriteLine(JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        if (arguments.HasFlag("markdown"))
+        {
+            // The exact rows docs/RULES.md carries; a test compares them so the table cannot drift
+            // from the code it claims to describe.
+            foreach (var row in rows)
+            {
+                Console.WriteLine(
+                    $"| {row.id} | {row.title} | {row.severity} | {row.categories.Replace(", ", " + ", StringComparison.Ordinal)} | {string.Join(", ", row.mitre)} | {row.kind} |");
+            }
+
             return 0;
         }
 
@@ -298,6 +327,15 @@ public static class Program
         Console.Error.WriteLine(message);
         return 2;
     }
+
+    private static string KindOf(IRule rule) => rule switch
+    {
+        IWindowedRule windowed => string.Create(
+            CultureInfo.InvariantCulture,
+            $"aggregated ({(int)windowed.Window.TotalSeconds} s)"),
+        ICorrelatedRule => "correlated",
+        _ => "per-event",
+    };
 
     private static string Truncate(string value, int width) =>
         value.Length <= width ? value : value[..Math.Max(0, width - 1)] + "…";

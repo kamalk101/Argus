@@ -63,8 +63,10 @@ public static class Program
             Console.WriteLine("argus-agent " + AgentInfo.Version);
             return 0;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException)
         {
+            // Settings files are user input: a bad one is a message and exit 3, never an unhandled
+            // exception with a stack trace.
             Console.Error.WriteLine("argus-agent: " + exception.Message);
             return 3;
         }

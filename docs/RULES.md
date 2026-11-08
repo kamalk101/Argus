@@ -9,8 +9,6 @@ reason, counterfactual and at least two fixtures each.
 
 | ID | Title | Severity | Channel | MITRE | Kind |
 |---|---|---|---|---|---|
-| P-002 | Unexpected command interpreter | 85 | process | T1059 | per-event |
-| P-003 | Interpreter with encoded or remote payload | 75 | process | T1218, T1027 | per-event |
 | F-001 | Write to an autostart location | 80 | file | T1547.001 | per-event |
 | F-002 | Write to a Run/RunOnce autostart key | 75 | registry | T1547.001 | per-event |
 | F-003 | Scheduled task created | 70 | process | T1053.005 | per-event |
@@ -20,10 +18,12 @@ reason, counterfactual and at least two fixtures each.
 | F-007 | Executable payload dropped in a writable location | 50 | file | T1105 | per-event |
 | F-008 | Credential store accessed | 70 | file | T1555 | per-event |
 | N-001 | Connection to a risky service port | 45 | network | T1021 | per-event |
-| N-002 | Periodic callbacks to one endpoint | 60 | network | T1071 | aggregated (10 min) |
+| N-002 | Periodic callbacks to one endpoint | 60 | network | T1071 | aggregated (600 s) |
 | N-003 | Large outbound transfer to one address | 65 | network | T1041 | aggregated (60 s) |
 | N-004 | Connection to a bare public address | 35 | network | T1095 | per-event |
-| X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated (60 s) |
+| P-002 | Unexpected command interpreter | 85 | process | T1059 | per-event |
+| P-003 | Interpreter with encoded or remote payload | 75 | process | T1218, T1027 | per-event |
+| X-001 | Persistence write followed by external connection | 90 | file + network | T1105, T1547 | correlated |
 
 **How registry writes are attributed (measured).** The classic registry keyword names a key
 when it is opened and reports the value write separately, but the handle in the write never
@@ -97,6 +97,45 @@ rule.
 Volume rules needed one sensor addition: `TcpIp/Send` and `TcpIp/Recv` were being dropped, because a
 connection record says where data is going, not how much went. Both now map to `NetFlow` with
 `BytesOut`/`BytesIn`.
+
+### Thresholds are data
+
+The numbers a windowed rule fires on live in `RuleSettings` (`src/Argus.Analysis/Rules/RuleSettings.cs`)
+and can be overridden without a rebuild:
+
+```json
+{
+  "massFileCreationCount": 200,
+  "massFileCreationWindowSeconds": 60,
+  "destructiveRenameCount": 10,
+  "destructiveRenameDirectories": 5,
+  "destructiveRenameWindowSeconds": 60,
+  "beaconConnections": 6,
+  "beaconWindowSeconds": 600,
+  "beaconMinMeanIntervalSeconds": 5,
+  "beaconMaxJitter": 0.15,
+  "outboundVolumeBytes": 20971520,
+  "outboundVolumeWindowSeconds": 60
+}
+```
+
+```text
+argus replay recording.jsonl --rules profile.json
+argus-agent --target app.exe --rules profile.json --duration 120
+```
+
+Three properties keep this from becoming a way to lie about the product:
+
+- **Unknown keys are errors.** A typo (`beaconThreshold`) fails with the offending name instead of
+  silently leaving the default in place while the operator believes otherwise.
+- **Impossible values are errors.** A count of zero would fire on every event; a negative window
+  would match nothing. Both are rejected with the field named.
+- **The finding quotes the threshold that fired.** Factors carry `threshold=…` and the
+  counterfactual says "would not fire below N creates per W s", so a lowered profile cannot
+  produce a detection that describes a different rule than the one that ran.
+
+Code built the wrong way round here is a real risk: the threshold must be read from settings at
+construction, never duplicated in the reason text.
 
 ### F-006: what it counts, and what it cannot see
 
@@ -198,18 +237,52 @@ Properties this buys:
 - **Every number is explainable.** Each detection stores its reason, factors, counterfactual
   and evidence sequence numbers; the assessment stores the arithmetic in prose.
 
+### A worked table, computed by hand
+
+Three cases, worked from the formula above rather than from a run, so the model stays checkable
+without the code. A test (`The_documented_score_table_matches_the_scorer`) asserts these numbers.
+
+| Case | Inputs | Arithmetic | Risk | Band |
+|---|---|---|---|---|
+| One file detection, fresh | `S = 80`, `c = 0.90`, `a = 0`, 1 channel | `w = 0.80 × 0.90 × 1 = 0.72`; `1 − 0.28 = 0.72`; `× 1.00` | **72.0** | Suspicious — one channel, nothing critical fired, so the gate holds it below malicious |
+| File and network detections, fresh | `S = 80, c = 0.90` (file) and `S = 50, c = 0.75` (network), 2 channels | `w₁ = 0.72`, `w₂ = 0.50 × 0.75 = 0.375`; `1 − (0.28 × 0.625) = 0.825`; `× 1.08` | **89.1** | Malicious — two independent channels |
+| The first case, 15 minutes later | `S = 80`, `c = 0.90`, `a = 15 min` | `0.5^(15/15) = 0.50`, but the decay floor is `0.60`, so `decay = 0.60`; `w = 0.80 × 0.90 × 0.60 = 0.432`; `× 1.00` | **43.2** | Suspicious — still above threshold, and the peak score of 72.0 is retained separately. The floor is why old evidence cannot fade below 60 % while the session is open |
+
+### Coverage travels with the verdict
+
+Collection gaps (a throttled volume fuse, a target that exited before anything was captured, a lost
+ETW buffer, a provider that would not start) do **not** subtract from the score. A dropped event is
+not evidence of anything, and inventing a penalty would make the number mean less rather than more.
+
+What gaps do is forbid one reading: **"no detections" may never be rendered as "nothing happened."**
+`SessionSnapshot.Coverage` states whether the session was complete, how many gaps there were, the
+distinct reasons in first-seen order, and one sentence the report can print verbatim. The scorer's
+explanation is extended in the same direction — either "the score may understate what the
+application did" or "this is not an all-clear" — and the agent publishes the same object beside every
+verdict in `/state` and the final state event, so a consumer would have to go out of its way to
+present an incomplete session as a clean one.
+
+The gap log also names gaps by their machine reason (`volume-throttle`,
+`target-exited-immediately`), not by their prose: the sensor sends the reason in `Target` and the
+explanation in `Detail`, and the pipeline used to read the two fields the wrong way round.
+
 ## Adding a rule
 
-1. Implement `IEventRule` or `ICorrelatedRule` in `src/Argus.Analysis/Rules/`.
+1. Implement `IEventRule` or `ICorrelatedRule` in `src/Argus.Analysis/Rules/`; add
+   `IWindowedRule` if it decides from a window of earlier events.
 2. Set `RuleMetadata` (id, title, severity, evidence channels, MITRE, description).
 3. Emit `RuleFinding` with a **reason** naming the observed facts and a **counterfactual**
    stating what would have prevented it. `GroupPid` groups repeats under the acting process
    (e.g. the parent that spawned a shell).
-4. Register it in `RuleCatalog.CreateDefault()`.
+4. Add any threshold to `RuleSettings` and read it from there — never a constant and never a second
+   copy in the reason text.
+5. Register it in `RuleCatalog.CreateDefault(settings)`.
 5. Add at least two fixtures in `tests/fixtures/scenarios/` — one that fires, one that must
    stay quiet — and a unit test in `tests/Argus.Analysis.Tests/`. For a file rule, the quiet
    fixture is usually the `FileEffect.Opened` case.
-6. `./scripts/verify.sh` must stay green.
+7. Re-run `argus rules --markdown` and paste the table above; a test compares it against the
+   catalogue, so a forgotten row fails the build rather than shipping a stale table.
+8. `./scripts/verify.sh` must stay green.
 
 ## Fixture format
 

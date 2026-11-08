@@ -18,15 +18,19 @@ using Argus.Core.Paths;
 /// live probe produced zero events), so a wiper that only deletes is invisible to this rule
 /// and to the sensor. See docs/RULES.md; do not present a quiet F-006 as "no destruction".
 /// </summary>
-public sealed class DestructiveRenameBurstRule : IEventRule
+public sealed class DestructiveRenameBurstRule : IEventRule, IWindowedRule
 {
     /// <summary>Marker-appending renames within the window that make the pattern worth reporting.</summary>
-    public const int Threshold = 10;
+    private readonly RuleSettings _settings;
+
+    public DestructiveRenameBurstRule(RuleSettings? settings = null) => _settings = settings ?? RuleSettings.Default;
+
+    public int Threshold => _settings.DestructiveRenameCount;
 
     /// <summary>How many directories must be involved: one folder of renamed files is a batch tool.</summary>
-    public const int DirectoryThreshold = 5;
+    public int DirectoryThreshold => _settings.DestructiveRenameDirectories;
 
-    public static readonly TimeSpan Window = TimeSpan.FromSeconds(60);
+    public TimeSpan Window => TimeSpan.FromSeconds(_settings.DestructiveRenameWindowSeconds);
 
     /// <summary>
     /// Extensions that mean "this file was still being written". Renaming
@@ -119,6 +123,7 @@ public sealed class DestructiveRenameBurstRule : IEventRule
             [
                 $"marker_renames_in_window={count}",
                 $"distinct_directories={directories.Count}",
+                $"threshold={Threshold}",
                 $"window_seconds={(int)Window.TotalSeconds}",
                 $"appended_suffix={(topSuffix.Key ?? "unknown")}",
                 $"appended_suffix_count={topSuffix.Value}",

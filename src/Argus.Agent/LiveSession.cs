@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Argus.Analysis.Detection;
 using Argus.Analysis.Pipeline;
+using Argus.Analysis.Rules;
 using Argus.Core.Events;
 using Argus.Core.Paths;
 using Argus.Core.Processes;
@@ -69,7 +70,8 @@ public sealed class LiveSession : IAsyncDisposable
         string databasePath,
         string recordPath,
         SseHub hub,
-        SensitivePathCatalog catalog)
+        SensitivePathCatalog catalog,
+        RuleSettings? ruleSettings = null)
     {
         ArgumentNullException.ThrowIfNull(process);
         ArgumentNullException.ThrowIfNull(database);
@@ -101,6 +103,7 @@ public sealed class LiveSession : IAsyncDisposable
             RootImagePath = targetPath,
             Catalog = catalog,
             Risk = RiskOptions.Default,
+            Rules = RuleCatalog.CreateDefault(ruleSettings),
         });
 
         var directory = Path.GetDirectoryName(recordPath);
@@ -138,18 +141,23 @@ public sealed class LiveSession : IAsyncDisposable
         _watch = Task.Run(WatchAsync);
     }
 
-    public SessionStateDto State() => new(
-        Id,
-        TargetPath,
-        RootPid,
-        _status,
-        StartedUtc,
-        _endedUtc,
-        _risk.Band.ToString(),
-        _risk.Score,
-        _risk.PeakScore,
-        DatabasePath,
-        RecordPath);
+    public SessionStateDto State()
+    {
+        var coverage = _pipeline.Snapshot().Coverage;
+        return new SessionStateDto(
+            Id,
+            TargetPath,
+            RootPid,
+            _status,
+            StartedUtc,
+            _endedUtc,
+            _risk.Band.ToString(),
+            _risk.Score,
+            _risk.PeakScore,
+            DatabasePath,
+            RecordPath,
+            new CoverageDto(coverage.Complete, coverage.Gaps, coverage.Reasons, coverage.Statement));
+    }
 
     public HealthDto Health()
     {
@@ -596,6 +604,15 @@ public sealed class LiveSession : IAsyncDisposable
                 verdict = snapshot.Risk.Band.ToString(),
                 score = snapshot.Risk.Score,
                 peak = snapshot.Risk.PeakScore,
+                // Published with the verdict so a consumer cannot render "clean" while the sensor
+                // had holes; the statement is ready to show as-is.
+                coverage = new
+                {
+                    complete = snapshot.Coverage.Complete,
+                    gaps = snapshot.Coverage.Gaps,
+                    reasons = snapshot.Coverage.Reasons,
+                    statement = snapshot.Coverage.Statement,
+                },
             });
         }
         finally

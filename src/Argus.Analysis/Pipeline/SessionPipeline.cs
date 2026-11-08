@@ -83,6 +83,12 @@ public sealed record SessionSnapshot
 
     public required IReadOnlyList<GapEntry> Gaps { get; init; }
 
+    /// <summary>
+    /// What the sensor could not see. A verdict is published with its coverage, so "no detections"
+    /// can never be rendered as "nothing happened" while gaps exist.
+    /// </summary>
+    public required CoverageAssessment Coverage { get; init; }
+
     public required ProcessTable Processes { get; init; }
 }
 
@@ -148,12 +154,16 @@ public sealed class SessionPipeline
         if (behaviorEvent.Kind == EventKind.MonitorGap)
         {
             _gaps++;
+            // Target carries the machine-readable reason and Detail the prose (see the sensor's
+            // EmitGap). Reading them the other way round put the sentence in the reason column and
+            // the reason in the detail column, which is how the report ended up naming gaps by
+            // their description.
             _gapLog.Add(new GapEntry(
                 behaviorEvent.TimestampUtc,
                 behaviorEvent.ImageName ?? "sensor",
-                behaviorEvent.Detail ?? "collection gap",
+                behaviorEvent.Target is { Length: > 0 } reason ? reason : "collection-gap",
                 null,
-                behaviorEvent.Target));
+                behaviorEvent.Detail));
         }
 
         if (!behaviorEvent.InScope)
@@ -241,24 +251,48 @@ public sealed class SessionPipeline
         };
     }
 
-    public SessionSnapshot Snapshot() => new()
+    public SessionSnapshot Snapshot()
     {
-        Risk = _risk,
-        Detections = _detections.All,
-        Gaps = _gapLog,
-        Processes = _processes,
-        Counters = new SessionCounters
+        var coverage = CoverageAssessment.From(_gapLog);
+
+        return new SessionSnapshot
         {
-            EventsSeen = _eventsSeen,
-            EventsInScope = _eventsInScope,
-            EventsOutsideScope = _eventsOutsideScope,
-            ProcessStarts = _processStarts,
-            FileOperations = _fileOperations,
-            NetworkConnections = _networkConnections,
-            FindingsRaised = _findingsRaised,
-            Detections = _detections.All.Count,
-            Gaps = _gaps,
-            ByCategory = new Dictionary<EventCategory, long>(_byCategory),
-        },
-    };
+            Risk = WithCoverage(_risk, coverage),
+            Detections = _detections.All,
+            Gaps = _gapLog,
+            Coverage = coverage,
+            Processes = _processes,
+            Counters = new SessionCounters
+            {
+                EventsSeen = _eventsSeen,
+                EventsInScope = _eventsInScope,
+                EventsOutsideScope = _eventsOutsideScope,
+                ProcessStarts = _processStarts,
+                FileOperations = _fileOperations,
+                NetworkConnections = _networkConnections,
+                FindingsRaised = _findingsRaised,
+                Detections = _detections.All.Count,
+                Gaps = _gaps,
+                ByCategory = new Dictionary<EventCategory, long>(_byCategory),
+            },
+        };
+    }
+
+    /// <summary>
+    /// The score is left alone; the sentence around it is not. A reader who sees "no significant
+    /// indicators" must also see that the sensor had holes, and why.
+    /// </summary>
+    private static RiskAssessment WithCoverage(RiskAssessment risk, CoverageAssessment coverage)
+    {
+        if (coverage.Complete)
+        {
+            return risk;
+        }
+
+        var limitation = risk.Score > 0
+            ? $" Coverage was incomplete ({coverage.Gaps} gap(s)), so the score may understate what the application did."
+            : " No detections were raised, but coverage was incomplete, so this is not an all-clear.";
+
+        return risk with { Explanation = risk.Explanation + limitation };
+    }
 }

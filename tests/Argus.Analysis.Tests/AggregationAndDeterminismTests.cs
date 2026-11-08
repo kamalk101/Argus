@@ -116,7 +116,11 @@ public sealed class AggregationAndDeterminismTests
         ]);
 
         var gap = Assert.Single(snapshot.Gaps);
-        Assert.Contains("buffer overflow", gap.Reason);
+
+        // The sensor sends the reason in Target and the prose in Detail; the gap log used to read
+        // them the other way round, so reports named gaps by their description.
+        Assert.Equal("etw:file", gap.Reason);
+        Assert.Contains("buffer overflow", gap.Detail);
         Assert.Equal(1, snapshot.Counters.Gaps);
     }
 }

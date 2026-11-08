@@ -73,6 +73,15 @@ public interface IEventRule : IRule
     IEnumerable<RuleFinding> Evaluate(RuleContext context);
 }
 
+/// <summary>
+/// Decides from a window of earlier events rather than from one event. The window is surfaced so
+/// the catalogue and the report can say how far back a rule looked instead of implying it saw all.
+/// </summary>
+public interface IWindowedRule : IRule
+{
+    TimeSpan Window { get; }
+}
+
 /// <summary>Looks across recent events (e.g. persistence then network).</summary>
 public interface ICorrelatedRule : IRule
 {

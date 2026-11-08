@@ -21,8 +21,15 @@ public sealed class RuleCatalog
 
     public IEnumerable<IRule> All => EventRules.Cast<IRule>().Concat(CorrelatedRules);
 
-    public static RuleCatalog CreateDefault()
+    /// <summary>
+    /// The shipped catalogue. Passing settings replaces the thresholds the aggregated rules fire
+    /// on; the rules themselves (and their reasoning) stay the same code, so a profile cannot make
+    /// a rule stop explaining itself.
+    /// </summary>
+    public static RuleCatalog CreateDefault(RuleSettings? settings = null)
     {
+        var active = settings ?? RuleSettings.Default;
+
         IEventRule[] eventRules =
         [
             new ShellSpawnRule(),
@@ -50,11 +57,11 @@ public sealed class RuleCatalog
             new DroppedExecutableRule(),
             new AutostartKeyRule(),
             new ScheduledTaskRule(),
-            new MassFileCreationRule(),
-            new DestructiveRenameBurstRule(),
+            new MassFileCreationRule(active),
+            new DestructiveRenameBurstRule(active),
             new CredentialStoreRule(),
-            new BeaconingRule(),
-            new OutboundVolumeRule(),
+            new BeaconingRule(active),
+            new OutboundVolumeRule(active),
             new BarePublicIpRule(),
             new RiskyPortRule(),
         ];

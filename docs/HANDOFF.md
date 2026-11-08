@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **172 tests** (96 core, 65 analysis, 11 storage), **32/32** asserted
+Current automated counts: **192 tests** (96 core, 85 analysis, 11 storage), **32/32** asserted
 replay scenarios, 15 of the 23 catalogued rules shipped (`F-001` … `F-008`, `N-001` … `N-004`,
 `P-002`, `P-003`, `X-001`).
 
@@ -508,6 +508,15 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   pid table is behind a lock. Do not add unlocked state to it.
 - If you run tests on Linux, use `~/.dotnet/dotnet` if `dotnet` is not on `PATH`.
 
+- **Gap events carry the reason in `Target` and the prose in `Detail`**, the reverse of
+  `GapEntry(Timestamp, Source, Reason, LostCount, Detail)`. Read them the other way round and the gap
+  log names gaps by their description; the pipeline did exactly that until §12.10.
+- **`InvalidDataException` is not an `IOException`.** An `is IOException` catch filter does not see it,
+  so a bad `--rules` file crashed the agent with a stack trace until it was added to the filter.
+- **A `--rules` profile must be checked against the catalogue, not the reason text.** Findings carry
+  `threshold=...` from the settings instance; a constant copied into the prose would go stale the
+  moment a profile is applied.
+
 ## 11. Reporting discipline
 
 Every handoff should state:
@@ -674,7 +683,7 @@ final) is excluded because it is the commonest extension change on a desktop. Ve
 a probe renaming 12 files across 8 directories produced `F-006` at 20.5 Suspicious with 0 gaps,
 and replay of the same recording reproduces it. New fixtures 23 (`rename-burst-ransomware`,
 fires) and 24 (`bulk-rename-benign`: 60 in-folder renames with the extension kept plus 12 finished
-downloads, quiet). Tests: 172 (96 core, 65 analysis, 11 storage); 32/32 fixtures.
+downloads, quiet). Tests: 192 (96 core, 85 analysis, 11 storage); 32/32 fixtures.
 
 ### 12.6 F-008: credential store access — done
 
@@ -799,7 +808,88 @@ task is not registering one). Fixture 08 (`risky-port`) gained a DNS query, beca
 connection it models would otherwise trip N-004 — which it did, in the suite, before the fixture was
 made to match what the description claimed.
 
-### 12.10 Next in Phase 3
+### 12.10 Infrastructure pass: thresholds as data, coverage with the verdict
+
+Five things the catalogue promised but the code did not yet do. None of them adds a rule; all of
+them make the rules that exist harder to misread.
+
+**1. Thresholds moved into `RuleSettings` (`src/Argus.Analysis/Rules/RuleSettings.cs`).** The four
+windowed rules (F-004, F-006, N-002, N-003) read their numbers from settings instead of constants,
+so `argus replay --rules profile.json` and `argus-agent --rules profile.json` adjust a detection
+profile without a rebuild. Two safety properties matter more than the feature: unknown keys are
+errors (a typo like `beaconThreshold` fails instead of silently leaving the default), and impossible
+values are errors (a count of zero would fire on every event). Every finding now also carries
+`threshold=…` in its factors and quotes the threshold in its counterfactual, so a lowered profile
+cannot emit a detection that describes a different rule than the one that ran.
+
+**2. Gap reasons and gap prose were swapped.** The sensor sends the machine reason in `Target` and
+the explanation in `Detail`; `SessionPipeline` read them the other way round, so the gap log named
+gaps by their description and stored the reason in the detail column. Measured on old recordings from
+earlier probes, the reason column now reads `volume-throttle` and `target-exited-immediately` instead
+of the sentences. A test that asserted the swapped behaviour (`Monitoring_gap_is_recorded_not_hidden`)
+was corrected with it.
+
+**3. Coverage now travels with the verdict.** `SessionSnapshot.Coverage` states whether the session
+was complete, how many gaps there were, the distinct reasons, and a sentence the report can publish.
+Gaps still do **not** subtract from the score — a dropped event is not evidence of anything, and a
+numeric penalty would be invented precision — but the scorer's explanation is extended to say either
+"the score may understate what the application did" or "this is not an all-clear", and the agent
+publishes the same object in `/state` and the final state event. Replaying three real recordings from
+earlier probes shows the effect:
+
+```text
+argus-lat2.jsonl     complete: false  gaps: 1  reasons: ['volume-throttle']
+argus-short2.jsonl   complete: false  gaps: 1  reasons: ['target-exited-immediately']
+argus-short3.jsonl   complete: false  gaps: 1  reasons: ['target-exited-immediately']
+```
+
+**4. The catalogue table can no longer drift.** `argus rules --markdown` emits the exact rows
+`docs/RULES.md` carries, and `The_catalogue_table_in_the_docs_matches_the_shipped_rules` compares them
+against `RuleCatalog` — id, title, severity, channels, MITRE and kind. Two rows were wrong when the
+test was written (N-002's window and X-001's kind), which is the point.
+
+**5. Two more gates.** `No_benign_scenario_produces_a_high_severity_detection` replays every fixture
+whose band is Benign and fails on any detection at severity ≥ 65 or any risk at or above the
+suspicious threshold — the difference between a corpus and a regression test. And the hand-worked
+score table in `RULES.md` is asserted by `The_documented_score_table_matches_the_scorer`; writing it
+by hand already caught one doc error (the decay floor wins at 15 minutes, so the third case is 43.2,
+not 36.0).
+
+Live verification on the VM, same recording replayed three ways:
+
+```text
+live beacon recording (6 connects to 1.1.1.1:53, 10 s apart, 1503 events, 0 gaps)
+  agent with beaconConnections=3   N-002 events=2  confidence 0.36   risk 43.0
+  replay with the same --rules     N-002 events=2  confidence 0.36   risk 43.0
+  replay with defaults             N-002 events=1  confidence 0.21   risk 35.5
+```
+
+The settings path is therefore verified live end to end: the same file reaches the agent's pipeline
+and the CLI's, and the difference is the rule firing twice instead of once rather than an error
+message.
+
+A bad settings file is a message and exit 3, not a stack trace — both forms verified live:
+
+```text
+--rules missing.json   argus-agent: Rule settings file not found: ...\missing.json        exit 3
+--rules zero.json      argus-agent: Rule settings in ...: BeaconConnections must be
+                       greater than zero, got 0.                                            exit 3
+```
+
+A bad settings file is a message and exit 3, not a stack trace — both forms verified live:
+
+```text
+--rules missing.json   argus-agent: Rule settings file not found: ...
+--rules zero.json      argus-agent: Rule settings in ...: BeaconConnections must be
+                       greater than zero, got 0.                    (exit 3, no stack trace)
+```
+
+Not verified live this pass: a session where the volume fuse opens mid-run (needs 8 000 events/s
+sustained for 5 s). Coverage-with-gaps is verified by unit test and by replaying real recordings that
+already contain gaps, listed above.
+
+### 12.11 Next in Phase 3
+
 
 The rest of `PLAN.md` §6.3: the full 22-rule catalogue with at least two fixtures per rule,
 aggregation/escalation, correlated rules, and `docs/RULES.md` kept in step. Use

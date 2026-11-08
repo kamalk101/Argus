@@ -16,7 +16,7 @@ malicious. It does not scan a file and print a verdict.
 | 0 | Solution, event contract, docs, scripts | **done** (Linux-verified) |
 | 1 | Core model, scope tracking, scoring, SQLite, replay harness, fixtures | **done** (Linux-verified) |
 | 2 | ETW collectors + elevated agent host | **done on Windows** for process, file, network+DNS capture and the API guards; `--elevate` UAC consent click unverified (unattended VM), registry volume and loss under load unverified |
-| 3 | Full 22-rule catalogue + correlation | **in progress**; 15 of the 23 catalogued rules shipped and verified live (persistence incl. registry writes, system write, payload drop, mass file creation, ransomware-shaped rename burst, credential-store access, unexpected shell, encoded interpreter, risky port, beacon-shaped callbacks, large outbound transfers, bare-address connections, persistence-then-network) |
+| 3 | Full 22-rule catalogue + correlation | **in progress**; 15 of the 23 catalogued rules shipped and verified live, with tunable thresholds and the catalogue table gated by a test (persistence incl. registry writes, system write, payload drop, mass file creation, ransomware-shaped rename burst, credential-store access, unexpected shell, encoded interpreter, risky port, beacon-shaped callbacks, large outbound transfers, bare-address connections, persistence-then-network) |
 | 4 | Dashboard (8 screens) | not started |
 | 5 | Windows end-to-end, reports, tuning | not started |
 | 6 | ML advisory layer | not started |
@@ -97,7 +97,15 @@ Then:
 
 dotnet run --project src/Argus.Cli -- replay tests/fixtures/scenarios --assert
 dotnet run --project src/Argus.Cli -- replay tests/fixtures/scenarios --db /tmp/argus.db
-dotnet run --project src/Argus.Cli -- rules
+dotnet run --project src/Argus.Cli -- rules              # catalogue
+dotnet run --project src/Argus.Cli -- rules --markdown   # the table docs/RULES.md carries
+```
+
+Rule thresholds are data, so a profile can be tightened or relaxed without a rebuild — see
+"Thresholds are data" in `docs/RULES.md`. Unknown keys and impossible values are rejected:
+
+```bash
+dotnet run --project src/Argus.Cli -- replay recording.jsonl --rules profile.json
 ```
 
 On Windows (including the `tiny` VM):

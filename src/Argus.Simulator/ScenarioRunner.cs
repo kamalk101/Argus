@@ -3,6 +3,7 @@ namespace Argus.Simulator;
 using System.Globalization;
 using System.Text;
 using Argus.Analysis.Pipeline;
+using Argus.Analysis.Rules;
 using Argus.Core.Events;
 using Argus.Core.Paths;
 using Argus.Core.Risk;
@@ -61,7 +62,11 @@ public static class ScenarioRunner
     public static SensitivePathCatalog DefaultCatalog { get; } =
         SensitivePathCatalog.Default(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
-    public static ScenarioRun Run(ScenarioFile scenario, SensitivePathCatalog? catalog = null, RiskOptions? risk = null)
+    public static ScenarioRun Run(
+        ScenarioFile scenario,
+        SensitivePathCatalog? catalog = null,
+        RiskOptions? risk = null,
+        RuleSettings? rules = null)
     {
         ArgumentNullException.ThrowIfNull(scenario);
 
@@ -76,6 +81,7 @@ public static class ScenarioRunner
             RootImagePath = scenario.Meta.RootImagePath,
             Catalog = catalog ?? DefaultCatalog,
             Risk = risk ?? RiskOptions.Default,
+            Rules = RuleCatalog.CreateDefault(rules),
         });
 
         var events = new List<BehaviorEvent>(scenario.Events.Count);
