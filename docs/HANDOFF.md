@@ -74,6 +74,10 @@ the rules that must not be broken while continuing the work.
   and TCP table all pass; the 2 s probe saw 551 callbacks and forwarded 142 in-scope events.
 - Non-elevated start without `--allow-non-elevated` exits 3 with the elevation message.
 - `scripts/verify.ps1 -Smoke` passes end-to-end (self-test, 15 s notepad capture, replay).
+  Re-run 2026-11-09 after the root-signature change: self-test clean, 15 s notepad capture
+  (113 raw event lines, root PID 72), replay `Benign 0.0`, and the `launch-root` record now carries
+  `signature: valid` for `C:\Windows\System32\notepad.exe` — the fact that used to be missing on
+  the subject of every session (§12.14).
 
 ### Not yet verified
 
