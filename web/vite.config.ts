@@ -13,7 +13,18 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': { target: agent, changeOrigin: false },
+      // changeOrigin rewrites Host to the agent's own 127.0.0.1:<port>: the agent rejects any other
+      // Host header by design, and a dashboard-only dev proxy is not a reason to weaken that.
+      '/api': {
+        target: agent,
+        changeOrigin: true,
+        // The agent rejects any Origin that is not its own, and a browser always sends one on a POST
+        // (the stream-ticket request). Rewrite it to the agent's origin for the dev proxy only; in the
+        // packaged shell the dashboard is served by the agent, so it is same-origin and unaffected.
+        configure: (proxy: { on: (event: string, handler: (request: { setHeader: (name: string, value: string) => void }) => void) => void }) => {
+          proxy.on('proxyReq', (request) => request.setHeader('Origin', agent));
+        },
+      },
     },
   },
   build: {

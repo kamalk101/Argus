@@ -33,9 +33,9 @@ benign corpus of six applications ([`docs/BENIGN-CORPUS.md`](docs/BENIGN-CORPUS.
 **Dashboard (Phase 4, in progress):** `web/` renders the agent's own JSON in eight screens — Sessions,
 Live, Processes, Files, Network, Detections, Timeline, Search — with a virtualised event list (100k
 rows asserted), a risk chart with detection markers, an evidence chain per detection, an
-observability badge on every row and a persistent coverage banner. **16 Playwright tests** run
-against payloads captured from real sessions by `scripts/dashboard-fixtures.ps1`, so the tests cannot
-pass while a DTO breaks the UI. Live checks: `scripts/check-stream-ticket.sh` (single-use SSE tickets,
+observability badge on every row and a persistent coverage banner. **Playwright tests** run against payloads
+captured from real sessions by `scripts/dashboard-fixtures.ps1`, so the tests cannot pass while a DTO
+breaks the UI, plus a live mode checked against a running agent. Live checks: `scripts/check-stream-ticket.sh` (single-use SSE tickets,
 8/8) and `scripts/check-sse-reconnect.sh` (reconnect recovers the snapshot, 4/4). Live ETW sessions on Windows that produced real `F-001`,
 `F-002`, `F-003`, `F-004`, `F-007`, `F-008`, `N-005`, `P-005` and `X-002` detections from benign and
 self-cleaning probes, with the replayed verdict matching the live one. The Windows projects

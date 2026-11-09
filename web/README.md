@@ -41,11 +41,19 @@ npm run dev -- --open "/?fixtures=flagged"
 ```bash
 npm run build    # tsc --noEmit + vite build
 npm test         # 16 Playwright tests: eight routes, observability badges, evidence chain,
-                 # keyboard, 100k-row scroll
+                 # keyboard, 100k-row scroll (2 live tests skip without a token)
 npm run shots    # writes .shots/*.png for review (no assertions)
 ```
 
 Playwright serves `dist/` with `vite preview`, so `npm run build` must be run before `npm test`.
+
+Live mode, against a running agent on port 5180 (the dashboard must go through the dev proxy, which
+rewrites `Host` and `Origin` to the agent's own — it rejects anything else by design):
+
+```bash
+ARGUS_AGENT=http://127.0.0.1:5180 npm run dev
+ARGUS_LIVE_TOKEN=<token> npm test -- e2e/live.spec.ts
+```
 
 ## Layout
 

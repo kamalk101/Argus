@@ -1131,7 +1131,8 @@ Fixtures 52–54 plus five unit tests. Tests: 248 (96 core, 141 analysis, 11 sto
 
 Phase 4 is live against captured payloads. `web/` holds a React 19 + Vite 8 + TypeScript shell with
 **eight routes** — Sessions, Live, Processes, Files, Network, Detections, Timeline, Search — rendering
-the agent's own JSON, and `npm test` runs a **16-test Playwright suite** over them.
+the agent's own JSON, and `npm test` runs a **Playwright suite of 18 tests** over them (16 on fixtures,
+2 live — see below).
 
 **The fixtures are real payloads, not mocks.** `scripts/dashboard-fixtures.ps1` starts the elevated
 agent on a target, waits for the session to accumulate, then saves `/api/sessions`, `/{id}`,
@@ -1160,6 +1161,14 @@ Both are verified live by checked-in scripts, not by inspection:
 | --- | --- | --- |
 | `bash scripts/check-stream-ticket.sh` | 401 without token or ticket; ticket issued (48 hex chars) only to an authorised caller; fresh ticket 200; **the same ticket again 401**; another session's ticket 401; the bearer header still works | 8/8 pass |
 | `bash scripts/check-sse-reconnect.sh` | a reconnected client is handed `state` and `stats` **again**, so it is never left holding only deltas | 4/4 pass |
+| `ARGUS_LIVE_TOKEN=<token> npm test -- e2e/live.spec.ts` | the dashboard against a **running** agent: sessions load over the bearer token, the live screen opens the ticket-authenticated stream and shows `live`, the detections screen reads over the same token | 2/2 pass |
+
+The live run also caught a real defect that fixtures could not: the dev proxy forwarded the browser's
+`Origin: http://localhost:5173` to an agent that only accepts its own origin, so the stream-ticket
+`POST` was **403** and the live screen sat on "connecting…" forever. The proxy now rewrites `Origin`
+to the agent's origin (dev only — in the packaged shell the dashboard is served by the agent and is
+same-origin). Two smaller things it showed: the coverage banner was rendered twice on the Live screen
+(shell and screen), and the empty detections state had no heading.
 
 **Definition of done for Phase 4, item by item:**
 

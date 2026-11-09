@@ -26,7 +26,10 @@ export function ThreatsScreen() {
 
   if (sorted.length === 0) {
     return (
-      <div className="p-4">
+      <div className="space-y-3 p-4">
+        <h1 className="text-sm font-semibold uppercase tracking-wider">
+          Detections <span className="text-ink-400">(0)</span>
+        </h1>
         <StateNote
           kind="empty"
           message={`No rule fired in this session. That is a report about the evidence Argus could see${session.coverage.complete ? '' : ' — and this session had collection gaps, so read it as weaker than usual'}.`}
