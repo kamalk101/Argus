@@ -182,6 +182,10 @@ public sealed class StorageTests : IDisposable
         Assert.Equal("sample.exe --run", row.CommandLine);
         Assert.Equal(ProcessScopeState.Root, row.Scope);
 
+        // Provenance travels with the process row: P-002 reads the parent's signature from here.
+        _processes.Upsert(Session, record with { Signature = SignatureStatus.Valid });
+        Assert.Equal(SignatureStatus.Valid, Assert.Single(_processes.List(Session)).Signature);
+
         _processes.MarkExited(Session, 4312, T0, T0.AddMinutes(1), 0);
 
         using var connection = _database.Open();

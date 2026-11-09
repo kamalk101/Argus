@@ -34,6 +34,48 @@ public sealed class RuleTests
     }
 
     [Fact]
+    public void Signed_installer_named_setup_is_not_flagged_for_spawning_a_shell()
+    {
+        // Measured live 2026-11-09: a catalog-signed parent named contoso-setup-x64.exe spawning
+        // PowerShell was reported by P-002 at 85. Real installers are named arbitrarily, so the
+        // exemption is name *shape* plus a verified signature.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.ProcessStart(Fx.RootPid, 9999, "VSCodeUserSetup-x64-1.90.exe", @"C:\Users\kamal\Downloads\VSCodeUserSetup-x64-1.90.exe", signature: SignatureStatus.Valid),
+            Fx.ProcessStart(5120, Fx.RootPid, "powershell.exe", @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "powershell.exe -NoProfile -Command Get-Date", 2),
+        ]);
+
+        Assert.DoesNotContain("P-002", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Unsigned_setup_named_program_still_flags_its_shell()
+    {
+        // The signature half is what stops "setup.exe" from being a free pass.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.ProcessStart(Fx.RootPid, 9999, "contoso-setup-x64.exe", @"C:\Users\kamal\Downloads\contoso-setup-x64.exe", signature: SignatureStatus.Invalid),
+            Fx.ProcessStart(5120, Fx.RootPid, "powershell.exe", @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "powershell.exe -NoProfile -Command Get-Date", 2),
+        ]);
+
+        Assert.Contains("P-002", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void Signed_program_without_an_installer_name_still_flags_its_shell()
+    {
+        // A valid publisher certificate alone is not permission to run shells: the name marker
+        // is the half that says "this is a setup program", and it is required as well.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.ProcessStart(Fx.RootPid, 9999, "Git-2.56.0.4-64-bit.exe", @"C:\Users\kamal\Downloads\Git-2.56.0.4-64-bit.exe", signature: SignatureStatus.Valid),
+            Fx.ProcessStart(5120, Fx.RootPid, "powershell.exe", @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "powershell.exe -NoProfile -Command Get-Date", 2),
+        ]);
+
+        Assert.Contains("P-002", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
     public void Non_shell_child_is_not_flagged()
     {
         var (snapshot, _) = Fx.Run(

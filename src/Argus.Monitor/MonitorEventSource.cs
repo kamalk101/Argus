@@ -300,6 +300,11 @@ public sealed class MonitorEventSource : IAsyncDisposable
             Pid = pid,
             ImageName = EtwEventMapper.FileNameOf(imagePath),
             ImagePath = imagePath,
+            // The root is launched by us, so its image is on disk and can be checked once,
+            // synchronously, before the session is live. Without this the monitored application
+            // itself has no provenance fact at all: measured 2026-11-09, every root record carried
+            // no signature, so no rule could ask whether the subject of the session was signed.
+            Signature = RootSignature(imagePath),
             Observability = Observability.Direct,
             Source = EventSourceKind.Polling,
             Detail = "launch-root",
@@ -313,6 +318,24 @@ public sealed class MonitorEventSource : IAsyncDisposable
         }
 
         Write(rootEvent);
+    }
+
+    private static SignatureStatus? RootSignature(string? imagePath)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(imagePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ImageSignature.Verify(imagePath);
+        }
+        catch (Exception)
+        {
+            // A provenance check that could not run is not a claim about the file.
+            return SignatureStatus.Unknown;
+        }
     }
 
     private void Accept(RawEvent rawEvent)

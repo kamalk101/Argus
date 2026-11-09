@@ -94,6 +94,24 @@ only when no parent record exists at all and the interpreter is in the tree by l
 reporting at 60. The first draft of P-001 used the same predicate as P-002 and every shell fixture
 produced two findings for one launch — the disjointness is the rule, not a filter applied afterwards.
 
+**P-002's installer exemption needs a signature, not a name.** The rule's own description exempts
+"a shell, terminal, IDE, installer or service host", and a fixed name list cannot deliver that:
+measured on the test machine, the real installers were named `ChromeSetup.exe`,
+`Git-2.56.0.4-64-bit.exe`, `python-3.12.10-amd64.exe` and `node-v22.23.4-x64.msi` — only one of them
+ever matches a literal set. A parent therefore also counts as expected when **both** hold: its image
+name contains an installer/updater marker (`setup`, `install`, `updat`, `deploy`) **and** its
+signature is `Valid`. Both halves were measured live: a catalog-signed binary named
+`contoso-setup-x64.exe` spawning PowerShell scored `P-002` at 85 before the change and produced no
+detection after it, while an unsigned copy of the same name still fires. A valid publisher
+certificate alone is not permission either — `Git-2.56.0.4-64-bit.exe` carries no marker and is
+still reported — so the exemption cannot be reached by a renamed signed system binary, and this is
+fixtures 50 and 51.
+
+That exemption has a limit worth stating plainly: a real installer whose file name carries no marker
+is still reported when it spawns a shell, because the rule has no fact that says "the program under
+test *is* an installer". The honest fix for that is an operator-declared subject role in the
+testing settings (Phase 5 tuning), not a wider name heuristic.
+
 Two things the stream still contains and the rules do not use: the kernel's own key-cache
 traffic (`Registry/KCBCreate`, `Registry/KCBDelete`), whose header pid is whichever process
 triggered a cache operation and which used to be mapped as writes by substring matching — a

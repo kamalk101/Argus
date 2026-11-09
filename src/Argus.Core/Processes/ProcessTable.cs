@@ -1,6 +1,7 @@
 namespace Argus.Core.Processes;
 
 using Argus.Core.Sessions;
+using Argus.Core.Events;
 
 public sealed record ProcessRecord(
     int Pid,
@@ -10,7 +11,8 @@ public sealed record ProcessRecord(
     string? CommandLine,
     DateTimeOffset StartedUtc,
     ProcessScopeState Scope,
-    string? ScopeReason = null);
+    string? ScopeReason = null,
+    SignatureStatus? Signature = null);
 
 /// <summary>
 /// Reconstructed view of the monitored tree. Ancestry is rebuilt from recorded

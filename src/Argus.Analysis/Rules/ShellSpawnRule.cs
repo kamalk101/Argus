@@ -52,6 +52,11 @@ public sealed class ShellSpawnRule : IEventRule
             yield break;
         }
 
+        if (IsSignedInstaller(parent, parentName))
+        {
+            yield break;
+        }
+
         if (string.Equals(parentName, child, StringComparison.OrdinalIgnoreCase))
         {
             yield break;
@@ -84,4 +89,29 @@ public sealed class ShellSpawnRule : IEventRule
         string.IsNullOrWhiteSpace(commandLine)
             ? string.Empty
             : commandLine.Length <= 160 ? commandLine : commandLine[..160] + "…";
+
+    /// <summary>
+    /// This rule's own description exempts installers and updaters, but a name list cannot: measured
+    /// 2026-11-09, the four real installers on the test machine were named <c>ChromeSetup.exe</c>,
+    /// <c>Git-2.56.0.4-64-bit.exe</c>, <c>python-3.12.10-amd64.exe</c> and
+    /// <c>node-v22.23.4-x64.msi</c>, so only one of them would ever match a fixed set. A signed image
+    /// whose name carries an installer or updater marker is the shape a setup program has: it was
+    /// verified live that a catalog-signed parent named <c>contoso-setup-x64.exe</c> spawning
+    /// PowerShell scored <c>P-002</c> at 85 before this check existed.
+    ///
+    /// Both halves are required. A name alone is a free pass for malware called <c>setup.exe</c> —
+    /// measured live, an unsigned copy with the same name still fires — so only a publisher-verified
+    /// image gets the exemption, and installers whose names carry no marker
+    /// (<c>Git-2.56.0.4-64-bit.exe</c>) are still reported rather than guessed about.
+    /// </summary>
+    private static bool IsSignedInstaller(Core.Processes.ProcessRecord parent, string parentName)
+    {
+        if (parent.Signature != SignatureStatus.Valid)
+        {
+            return false;
+        }
+
+        return ProcessNames.InstallerMarkers.Any(marker =>
+            parentName.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    }
 }

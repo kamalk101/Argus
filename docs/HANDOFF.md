@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **240 tests** (96 core, 133 analysis, 11 storage), **49/49** asserted
+Current automated counts: **243 tests** (96 core, 136 analysis, 11 storage), **51/51** asserted
 replay scenarios, and **all 23 rules** in `PLAN.md` §6.3 shipped (`F-001` … `F-008`, `N-001` … `N-005`,
 `P-001` … `P-008`, `X-001`, `X-002`).
 
@@ -489,6 +489,13 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   built on the rewrite-then-rename shape for exactly this reason, and a delete-only wiper is
   undetected. Closing this needs another sensor (minifilter, or `FileIO/SetInfo` with
   `FileDispositionInformation`) — do not paper over it with a rule.
+- **The monitored root has a signature only because `SeedRoot` takes it.** The synthetic
+  `launch-root` record used to carry none, so the subject of the session had no provenance fact and
+  no rule could ask whether the application under test was signed (measured 2026-11-09: every root
+  record had `signature: null` while its children had one, and P-002's installer exemption depends on
+  it). `SeedRoot` now verifies the root image once, synchronously, before the session goes live, and
+  keeps `Unknown` when the check could not run. Do not remove it to save a few milliseconds at
+  startup, and do not treat a missing signature as "unsigned".
 - **`HasRoot` decides whether events are forwarded at all.** Events are buffered while it is
   false, so every path that names a root must flip it — `SeedRoot` does, for both orderings.
   Leaving it to `AttachRoot` alone made the legacy path (root supplied up front) buffer forever;
@@ -978,11 +985,11 @@ is verification under real activity rather than new rules: replay the live probe
 confirm the replayed verdict matches, and keep `docs/RULES.md` in step with the generated table. Use
 `FileChangeEvidence` for every file rule — do not reintroduce "create means wrote". Remaining
 known noise to tune with fixtures rather than suppression: utility `cmd.exe`/`powershell.exe`
-children under `P-002` when the parent is an installer or IDE (the interpreter scratch `.ps1` in
-`%TEMP%` was measured and closed, see §12.13).
+children under `P-002` when the parent is an installer or IDE (measured and closed in §12.14 — the
+exemption now needs a signature as well as an installer-shaped name).
 
 Two things worth picking up from §12.11. First, the metadata race that hides signatures for
-short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.14.
+short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.15.
 Second, whether F-001 plus X-002 on a single write *should* reach Malicious: fixture 46 scores
 39.6 rather than 85 because both carry the file category and the scorer correctly refuses to treat
 them as independent. That is a grouping decision, not a rule change.
@@ -1023,15 +1030,63 @@ Fixtures 48 (`interpreter-scratch-benign`) and 49 (`interpreter-drops-script`), 
 itself and the `%TEMP%` folder was checked afterwards — nothing was left behind.
 
 The second §12.12 noise item — utility `cmd.exe`/`powershell.exe` children under `P-002` when the
-parent is an installer or an IDE — is still open: `ExpectedInterpreterParents` already carries
-`msiexec.exe`, `setup.exe`, `installer.exe`, `update.exe`, `devenv.exe` and `code.exe`, but no live
-probe has measured an installer or IDE tree yet, so the list is unverified rather than tuned.
+parent is an installer or an IDE — was taken up next and is closed in §12.14.
 
-Tests: 240 (96 core, 133 analysis, 11 storage); 49/49 fixtures.
+Tests: 240 (96 core, 133 analysis, 11 storage); 49/49 fixtures at this point.
 
-### 12.14 A bounded metadata retry: measured, and not shipped
+### 12.14 Installer noise under P-002: measured, and why the exemption needs a signature
 
-The suggestion at the end of§12.11 was to retry the process-metadata lookup so short-lived processes are
+The second noise item left open in §12.12 was utility `cmd.exe`/`powershell.exe` children under
+P-002 when the parent is an installer or IDE. What was open was never the rule's *intent* — its own
+description exempts "a shell, terminal, IDE, installer or service host" — but the implementation,
+which recognised that intent only as a list of literal names (`setup.exe`, `installer.exe`,
+`msiexec.exe`, `updates.exe`, …).
+
+Probe (2026-11-09, elevated, self-cleaning): a copy of `C:\Windows\System32\cmd.exe` named
+`contoso-setup-x64.exe`, used as the monitored target and given `interp.bat` (one `powershell
+-NoProfile -Command "Get-Date | Out-Null"` line) to run. The name shape is a real one: the
+installers actually on this machine are `ChromeSetup.exe`, `Git-2.56.0.4-64-bit.exe`,
+`python-3.12.10-amd64.exe` and `node-v22.23.4-x64.msi`, so exactly one of them would ever match a
+fixed name list. The copy is catalog-signed (its hash is listed), so it is a signed installer-shaped
+parent, which is what a real setup program is.
+
+| Build | Verdict | Detections |
+| --- | --- | --- |
+| before | **Suspicious 21.7** | `P-002` ×1 |
+| after | **Benign 0.0** | none |
+
+with the unsigned twin — the same copy with one byte appended, `Get-AuthenticodeSignature` reporting
+`NotSigned` — still firing:
+
+| Unsigned twin | **Suspicious 21.6** | `P-002` ×1 |
+
+The rule now exempts a parent when its name carries an installer/updater marker (`setup`, `install`,
+`updat`, `deploy`) **and** its signature is `Valid`. Both halves are required for opposite reasons:
+a name alone is a free pass for malware called `setup.exe` (measured above — the unsigned twin
+fires), and a signature alone would exempt any renamed signed system binary (also measured as a
+test: `Git-2.56.0.4-64-bit.exe`, signed, no marker, still reported).
+
+**This needed a sensor fix first.** The parent's signature is read from the process table, and the
+monitored root had none: the synthetic `launch-root` record carried no `Signature`, so the
+application under test — the only parent that matters when the subject *is* an installer — could not
+answer the question at all. `SeedRoot` now verifies the root image once, synchronously, before the
+session goes live (measured after: `signature: valid` on the `launch-root` record, previously
+absent). `SignatureStatus` is on `ProcessRecord` and is persisted in the `signer` column that the
+schema already carried.
+
+Remaining limit, documented rather than papered over: an installer whose file name has no marker
+(`Git-2.56.0.4-64-bit.exe`, `python-3.12.10-amd64.exe`) still reports its shells. No fact in the
+event stream says "the program under test is an installer"; closing that properly is an
+operator-declared subject role (Phase 5 tuning), not a wider name heuristic.
+
+Fixtures 50 (`signed-installer-spawns-shell`) and 51 (`unsigned-setup-spawns-shell`), plus four
+unit tests in `RuleTests` and a storage round-trip assertion for the signature.
+
+Tests: 243 (96 core, 136 analysis, 11 storage); 51/51 fixtures.
+
+### 12.15 A bounded metadata retry: measured, and not shipped
+
+The suggestion at the end of §12.11 was to retry the process-metadata lookup so short-lived processes are
 enriched more often. It was implemented and measured before being documented as an improvement, and it
 made things worse.
 

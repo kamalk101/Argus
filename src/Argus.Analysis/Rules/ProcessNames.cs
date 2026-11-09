@@ -20,6 +20,14 @@ internal static class ProcessNames
     };
 
     /// <summary>
+    /// Substrings that mark an image name as a setup, installer or updater program. Real installers
+    /// are named arbitrarily (<c>ChromeSetup.exe</c>, <c>Docker Desktop Installer.exe</c>,
+    /// <c>Git-2.56.0.4-64-bit.exe</c>), so exact names cannot cover them; the marker is only ever
+    /// used together with a verified signature, never on its own.
+    /// </summary>
+    public static readonly string[] InstallerMarkers = ["setup", "install", "updat", "deploy"];
+
+    /// <summary>
     /// Parents for which spawning an interpreter is ordinary: shells, terminals,
     /// IDEs, installers and service hosts.
     /// </summary>

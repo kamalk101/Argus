@@ -192,7 +192,8 @@ public sealed class SessionPipeline
                 behaviorEvent.CommandLine,
                 behaviorEvent.TimestampUtc,
                 decision.State,
-                decision.Reason));
+                decision.Reason,
+                behaviorEvent.Signature));
         }
         else if (behaviorEvent.Category == EventCategory.File)
         {

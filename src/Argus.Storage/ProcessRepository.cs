@@ -1,5 +1,6 @@
 namespace Argus.Storage;
 
+using Argus.Core.Events;
 using Argus.Core.Processes;
 using Argus.Core.Sessions;
 
@@ -19,12 +20,13 @@ public sealed class ProcessRepository(SessionDatabase database)
                 start_utc, end_utc, exit_code, signer, sha256, integrity, scope_state)
             VALUES (
                 $session, $pid, $parent, $image, $imagePath, $cmdline,
-                $start, NULL, NULL, NULL, NULL, NULL, $scope)
+                $start, NULL, NULL, $signer, NULL, NULL, $scope)
             ON CONFLICT(session_id, pid, start_utc) DO UPDATE SET
                 parent_pid = excluded.parent_pid,
                 image_name = excluded.image_name,
                 image_path = excluded.image_path,
                 cmdline = COALESCE(excluded.cmdline, processes.cmdline),
+                signer = COALESCE(excluded.signer, processes.signer),
                 scope_state = excluded.scope_state;
             """;
 
@@ -35,6 +37,7 @@ public sealed class ProcessRepository(SessionDatabase database)
         command.Parameters.AddWithValue("$imagePath", Db.OrNull(record.ImagePath));
         command.Parameters.AddWithValue("$cmdline", Db.OrNull(record.CommandLine));
         command.Parameters.AddWithValue("$start", Db.Text(record.StartedUtc));
+        command.Parameters.AddWithValue("$signer", Db.OrNull(record.Signature?.ToString()));
         command.Parameters.AddWithValue("$scope", record.Scope.ToString());
 
         command.ExecuteNonQuery();
@@ -61,7 +64,7 @@ public sealed class ProcessRepository(SessionDatabase database)
         using var connection = _database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT pid, parent_pid, image_name, image_path, cmdline, start_utc, scope_state
+            SELECT pid, parent_pid, image_name, image_path, cmdline, start_utc, scope_state, signer
             FROM processes WHERE session_id = $session
             ORDER BY start_utc ASC, pid ASC;
             """;
@@ -78,7 +81,8 @@ public sealed class ProcessRepository(SessionDatabase database)
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 Db.ParseTime(reader.GetValue(5)),
-                Db.ParseEnum<ProcessScopeState>(reader.GetValue(6))));
+                Db.ParseEnum<ProcessScopeState>(reader.GetValue(6)),
+                Signature: reader.IsDBNull(7) ? null : Db.ParseEnum<SignatureStatus>(reader.GetValue(7))));
         }
 
         return results;
