@@ -25,3 +25,8 @@ exports/
 .vs/
 .idea/
 .DS_Store
+
+# Playwright artefacts and review screenshots (regenerated on demand)
+web/test-results/
+web/playwright-report/
+.shots/

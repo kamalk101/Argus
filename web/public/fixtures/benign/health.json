@@ -1,0 +1,51 @@
+﻿{
+    "status":  "ok",
+    "version":  "0.2.0-phase2",
+    "elevated":  true,
+    "agentPid":  7244,
+    "os":  "Microsoft Windows NT 10.0.19044.0",
+    "etwStarted":  true,
+    "dnsProviderEnabled":  true,
+    "registryProviderEnabled":  true,
+    "tcpTableAvailable":  true,
+    "etwLostEvents":  0,
+    "etwError":  null,
+    "dnsError":  null,
+    "registryProviderError":  null,
+    "monitor":  {
+                    "eventsSeen":  1816,
+                    "eventsForwarded":  64,
+                    "outsideScope":  1751,
+                    "sampledReads":  0,
+                    "throttledEvents":  0,
+                    "channelDropped":  0,
+                    "mappingFailures":  0,
+                    "processStarts":  0,
+                    "fileEvents":  64,
+                    "networkEvents":  0,
+                    "dnsEvents":  0,
+                    "registryEvents":  0,
+                    "throttled":  false
+                },
+    "session":  {
+                    "id":  "d787f8f1-98bf-4702-8890-2c2c7308befa",
+                    "targetPath":  "C:\\Windows\\System32\\notepad.exe",
+                    "rootPid":  2300,
+                    "status":  "running",
+                    "startedUtc":  "2026-11-09T13:13:57.7893217+00:00",
+                    "endedUtc":  null,
+                    "verdict":  "Benign",
+                    "score":  0,
+                    "peakScore":  0,
+                    "databasePath":  "C:\\Users\\kamal\\AppData\\Local\\Temp\\argus-fixtures-30179964\\session.db",
+                    "recordPath":  "C:\\Users\\kamal\\AppData\\Local\\Temp\\argus-fixtures-30179964\\session.jsonl",
+                    "coverage":  {
+                                     "complete":  true,
+                                     "gaps":  0,
+                                     "reasons":  [
+
+                                                 ],
+                                     "statement":  "No collection gaps were reported: every event the sensor produced reached the analysis."
+                                 }
+                }
+}

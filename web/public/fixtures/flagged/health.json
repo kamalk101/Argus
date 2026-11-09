@@ -1,0 +1,17 @@
+﻿{
+    "status":  "ok",
+    "version":  "0.2.0-phase2",
+    "elevated":  true,
+    "agentPid":  4444,
+    "os":  "Microsoft Windows NT 10.0.19044.0",
+    "etwStarted":  false,
+    "dnsProviderEnabled":  false,
+    "registryProviderEnabled":  false,
+    "tcpTableAvailable":  false,
+    "etwLostEvents":  0,
+    "etwError":  null,
+    "dnsError":  null,
+    "registryProviderError":  null,
+    "monitor":  null,
+    "session":  null
+}

@@ -1,0 +1,42 @@
+﻿{
+    "state":  {
+                  "id":  "d787f8f1-98bf-4702-8890-2c2c7308befa",
+                  "targetPath":  "C:\\Windows\\System32\\notepad.exe",
+                  "rootPid":  2300,
+                  "status":  "running",
+                  "startedUtc":  "2026-11-09T13:13:57.7893217+00:00",
+                  "endedUtc":  null,
+                  "verdict":  "Benign",
+                  "score":  0,
+                  "peakScore":  0,
+                  "databasePath":  "C:\\Users\\kamal\\AppData\\Local\\Temp\\argus-fixtures-30179964\\session.db",
+                  "recordPath":  "C:\\Users\\kamal\\AppData\\Local\\Temp\\argus-fixtures-30179964\\session.jsonl",
+                  "coverage":  {
+                                   "complete":  true,
+                                   "gaps":  0,
+                                   "reasons":  [
+
+                                               ],
+                                   "statement":  "No collection gaps were reported: every event the sensor produced reached the analysis."
+                               }
+              },
+    "record":  {
+                   "id":  "d787f8f1-98bf-4702-8890-2c2c7308befa",
+                   "targetPath":  "C:\\Windows\\System32\\notepad.exe",
+                   "targetSha256":  "f9d9b9ded9a67aa3cfdbd5002f3b524b265c4086c188e1be7c936ab25627bf01",
+                   "targetSigner":  null,
+                   "mode":  "launch",
+                   "startedUtc":  "2026-11-09T13:13:57.4288686+00:00",
+                   "endedUtc":  null,
+                   "status":  "running",
+                   "osBuild":  "Microsoft Windows NT 10.0.19044.0",
+                   "agentVersion":  "0.2.0-phase2",
+                   "elevated":  true,
+                   "peakScore":  0,
+                   "finalScore":  null,
+                   "verdict":  null,
+                   "lossEvents":  0,
+                   "lossBytes":  0,
+                   "configHash":  "phase2"
+               }
+}

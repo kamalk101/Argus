@@ -1,0 +1,72 @@
+﻿[
+    {
+        "pid":  6320,
+        "parentPid":  null,
+        "imageName":  "cmd.exe",
+        "imagePath":  "C:\\Windows\\System32\\cmd.exe",
+        "commandLine":  null,
+        "startedUtc":  "2026-11-09T13:25:24.0733089+00:00",
+        "scope":  "Root",
+        "scopeReason":  null
+    },
+    {
+        "pid":  7524,
+        "parentPid":  6320,
+        "imageName":  "reg.exe",
+        "imagePath":  null,
+        "commandLine":  "reg  add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v ArgusDemo /d \"C:\\Windows\\System32\\notepad.exe\" /f ",
+        "startedUtc":  "2026-11-09T13:25:24.1360196+00:00",
+        "scope":  "Confirmed",
+        "scopeReason":  null
+    },
+    {
+        "pid":  2756,
+        "parentPid":  6320,
+        "imageName":  "powershell.exe",
+        "imagePath":  "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "commandLine":  "powershell  -NoProfile -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA ",
+        "startedUtc":  "2026-11-09T13:25:24.4336417+00:00",
+        "scope":  "Confirmed",
+        "scopeReason":  null
+    },
+    {
+        "pid":  5932,
+        "parentPid":  6320,
+        "imageName":  "argus-demo.exe",
+        "imagePath":  "C:\\Users\\kamal\\AppData\\Local\\Temp\\argus-demo.exe",
+        "commandLine":  "\"C:\\Users\\kamal\\AppData\\Local\\Temp\\argus-demo.exe\"  /c \"whoami /priv\" ",
+        "startedUtc":  "2026-11-09T13:25:29.6368025+00:00",
+        "scope":  "Confirmed",
+        "scopeReason":  null
+    },
+    {
+        "pid":  8180,
+        "parentPid":  5932,
+        "imageName":  "conhost.exe",
+        "imagePath":  "C:\\Windows\\System32\\conhost.exe",
+        "commandLine":  "\\??\\C:\\Windows\\system32\\conhost.exe 0xffffffff -ForceV1",
+        "startedUtc":  "2026-11-09T13:25:29.6645419+00:00",
+        "scope":  "Confirmed",
+        "scopeReason":  null
+    },
+    {
+        "pid":  6536,
+        "parentPid":  5932,
+        "imageName":  "whoami.exe",
+        "imagePath":  null,
+        "commandLine":  "whoami  /priv ",
+        "startedUtc":  "2026-11-09T13:25:29.7942196+00:00",
+        "scope":  "Confirmed",
+        "scopeReason":  null
+    },
+    {
+        "pid":  7728,
+        "parentPid":  6320,
+        "imageName":  "reg.exe",
+        "imagePath":  null,
+        "commandLine":  "reg  delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v ArgusDemo /f ",
+        "startedUtc":  "2026-11-09T13:25:29.988867+00:00",
+        "scope":  "Confirmed",
+        "scopeReason":  null
+    }
+]

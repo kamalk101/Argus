@@ -26,8 +26,17 @@ Full plan and phase acceptance criteria: [`PLAN.md`](PLAN.md).
 
 **What is verified today:** the full Phase 3 rule catalogue — **23 of 23 rules** — with **248 unit
 tests** (96 core, 141 analysis, 11 storage) and **54 recorded scenarios** replaying through the real
-pipeline with asserted verdicts, each rule carrying at least one firing and one quiet twin. SQLite
-persistence and FTS search round-trip. Live ETW sessions on Windows that produced real `F-001`,
+pipeline with asserted verdicts, each rule carrying at least one firing and one quiet twin. A measured
+benign corpus of six applications ([`docs/BENIGN-CORPUS.md`](docs/BENIGN-CORPUS.md)) sits at
+**Benign 0.0 with zero detections and zero gaps**. SQLite persistence and FTS search round-trip.
+
+**Dashboard (Phase 4, in progress):** `web/` renders the agent's own JSON in eight screens — Sessions,
+Live, Processes, Files, Network, Detections, Timeline, Search — with a virtualised event list (100k
+rows asserted), a risk chart with detection markers, an evidence chain per detection, an
+observability badge on every row and a persistent coverage banner. **16 Playwright tests** run
+against payloads captured from real sessions by `scripts/dashboard-fixtures.ps1`, so the tests cannot
+pass while a DTO breaks the UI. Live checks: `scripts/check-stream-ticket.sh` (single-use SSE tickets,
+8/8) and `scripts/check-sse-reconnect.sh` (reconnect recovers the snapshot, 4/4). Live ETW sessions on Windows that produced real `F-001`,
 `F-002`, `F-003`, `F-004`, `F-007`, `F-008`, `N-005`, `P-005` and `X-002` detections from benign and
 self-cleaning probes, with the replayed verdict matching the live one. The Windows projects
 (`Argus.Monitor`, `Argus.Agent`) compile on Linux with `EnableWindowsTargeting`, and their
@@ -77,6 +86,7 @@ src/Argus.Monitor     Windows ETW collectors, process metadata, TCP owner table,
 src/Argus.Agent       elevated host: Kestrel API/SSE, live session, JSONL recording, reports
 src/Argus.Simulator   scenario files, replay driver, expectation assertions
 src/Argus.Cli         `argus` — replay, rules, selftest
+web/                  dashboard: React 19 + Vite + TS shell, eight routes, Playwright suite
 tests/                unit tests + tests/fixtures/scenarios/*.jsonl
 docs/RULES.md         rule catalogue, scoring model, how to add a rule
 docs/BENIGN-CORPUS.md measured false-positive baseline: six benign apps, every detection triaged

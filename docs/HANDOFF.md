@@ -14,8 +14,9 @@ the rules that must not be broken while continuing the work.
 - Cross-platform projects: `Argus.Core`, `Argus.Analysis`, `Argus.Storage`, `Argus.Simulator`,
   `Argus.Cli` (`net8.0`). Windows projects: `Argus.Monitor`, `Argus.Agent`
   (`net8.0-windows`, `EnableWindowsTargeting=true`).
-- `Argus.Desktop`, `web/`, `tools/behavior-sim` and the full 22-rule catalogue **do not exist
-  yet**. Do not reference or scaffold them unless the current task explicitly says so.
+- `web/` (the Phase 4 dashboard) **exists** as of `docs/HANDOFF.md` §12.16: React 19 + Vite 8 +
+  TypeScript + Tailwind v4, eight routes, Playwright suite. `Argus.Desktop` (the WebView2 shell) and
+  `tools/behavior-sim` still **do not exist**.
 
 ## 2. Product contract and non-negotiables
 
@@ -993,7 +994,7 @@ children under `P-002` when the parent is an installer or IDE (measured and clos
 exemption now needs a signature as well as an installer-shaped name).
 
 Two things worth picking up from §12.11. First, the metadata race that hides signatures for
-short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.16.
+short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.17.
 Second, whether F-001 plus X-002 on a single write *should* reach Malicious: fixture 46 scores
 39.6 rather than 85 because both carry the file category and the scorer correctly refuses to treat
 them as independent. That is a grouping decision, not a rule change.
@@ -1126,7 +1127,57 @@ VLC is not installed on this machine and VS Code proper was not present (the Ele
 
 Fixtures 52–54 plus five unit tests. Tests: 248 (96 core, 141 analysis, 11 storage); 54/54 fixtures.
 
-### 12.16 A bounded metadata retry: measured, and not shipped
+### 12.16 Dashboard v1: the eight screens exist, and the SSE token problem is solved properly
+
+Phase 4 is live against captured payloads. `web/` holds a React 19 + Vite 8 + TypeScript shell with
+**eight routes** — Sessions, Live, Processes, Files, Network, Detections, Timeline, Search — rendering
+the agent's own JSON, and `npm test` runs a **16-test Playwright suite** over them.
+
+**The fixtures are real payloads, not mocks.** `scripts/dashboard-fixtures.ps1` starts the elevated
+agent on a target, waits for the session to accumulate, then saves `/api/sessions`, `/{id}`,
+`/processes`, `/detections`, `/detections/{key}`, `/events`, `/timeline` and `/scores` into
+`web/public/fixtures/<name>/`. Two sets are captured: `benign` (notepad, zero detections) and
+`flagged` — a batch that writes a `Run` key, spawns `powershell -EncodedCommand`, copies `cmd.exe` to
+`%TEMP%` and runs it, producing five real detections (F-002 ×2, P-003, F-007, P-004) and a
+`Malicious 66.6` verdict. A hand-written mock would have drifted from the DTOs on the first change;
+these cannot.
+
+**Two contract gaps were found by building the screen that needed them**, and both were fixed in the
+agent rather than worked around in the UI:
+
+- **There was no score history endpoint**, so "risk over time" had nothing to draw. `GET
+  /api/sessions/{id}/scores` now serves the stored `ScoreHistory()` points (`ts`, `score`, `peak`,
+  `band`).
+- **`EventSource` cannot send an `Authorization` header**, and the threat model forbids putting the
+  bearer token in a URL that ends up in history, logs or a `Referer`. `POST
+  /api/sessions/{id}/stream-ticket` (authorised normally) issues a **single-use ticket bound to one
+  session, valid 30 seconds**, and `/stream?ticket=` accepts only that. `StreamTickets` is small and
+  deliberately dumb: a consumed or expired ticket is simply gone.
+
+Both are verified live by checked-in scripts, not by inspection:
+
+| Check | What it proves | Result |
+| --- | --- | --- |
+| `bash scripts/check-stream-ticket.sh` | 401 without token or ticket; ticket issued (48 hex chars) only to an authorised caller; fresh ticket 200; **the same ticket again 401**; another session's ticket 401; the bearer header still works | 8/8 pass |
+| `bash scripts/check-sse-reconnect.sh` | a reconnected client is handed `state` and `stats` **again**, so it is never left holding only deltas | 4/4 pass |
+
+**Definition of done for Phase 4, item by item:**
+
+- *Playwright passes on 8 routes* — 16 tests, each route asserted to render its own screen (with
+  uncaught page errors failing the test).
+- *100k-row fixture scrolls without jank* — generated in the test rather than committed (30 MB in git
+  is dead weight); asserts < 120 DOM rows, a reachable end and < 2 s to scroll there.
+- *Every event row exposes its observability badge* — asserted across the rendered rows; the badge
+  speaks the agent's real vocabulary (`Direct`→observed, `Inferred`, `Partial`) after the first run
+  showed "direct" leaking through.
+- *SSE reconnect recovers state* — the server-side half is proven by the script above; the client
+  refetches the snapshot and falls back to a widening retry delay.
+
+**What is deliberately not done in this slice:** `Argus.Desktop` (the WebView2 shell), the launch
+("Monitor an application") flow, report export and settings — the first two need Phase 5's elevation
+path, and the button is present but disabled with the reason in its tooltip rather than pretending.
+
+### 12.17 A bounded metadata retry: measured, and not shipped
 
 The suggestion at the end of §12.11 was to retry the process-metadata lookup so short-lived processes are
 enriched more often. It was implemented and measured before being documented as an improvement, and it

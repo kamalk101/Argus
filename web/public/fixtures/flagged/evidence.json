@@ -1,0 +1,46 @@
+﻿{
+    "detection":  {
+                      "id":  1,
+                      "detectionKey":  "P-003#6320#2",
+                      "ruleId":  "P-003",
+                      "title":  "Interpreter with encoded or remote payload",
+                      "severity":  75,
+                      "confidence":  0.25512182048358967,
+                      "categories":  "process",
+                      "scopePid":  6320,
+                      "firstSeenUtc":  "2026-11-09T13:25:24.4336417+00:00",
+                      "lastSeenUtc":  "2026-11-09T13:25:24.4336417+00:00",
+                      "eventCount":  1,
+                      "status":  "Open",
+                      "reason":  "powershell.exe (PID 2756) was started with the argument pattern \"-EncodedCommand\", which is used to run hidden or remotely supplied code.",
+                      "counterfactual":  "Would not fire for an ordinary invocation without encoded, URL or script-host arguments.",
+                      "factorsJson":  "[\"image=powershell.exe\",\"matched=-EncodedCommand\",\"arguments=powershell  -NoProfile -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA \"]",
+                      "mitre":  "T1218,T1027",
+                      "weight":  0.191
+                  },
+    "evidenceSeq":  [
+                        2
+                    ],
+    "events":  [
+                   {
+                       "seq":  2,
+                       "timestampUtc":  "2026-11-09T13:25:24.4336417+00:00",
+                       "kind":  "ProcessStart",
+                       "category":  "Process",
+                       "pid":  2756,
+                       "parentPid":  6320,
+                       "imageName":  "powershell.exe",
+                       "imagePath":  "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                       "target":  null,
+                       "remoteIp":  null,
+                       "remotePort":  null,
+                       "protocol":  null,
+                       "hostName":  null,
+                       "scope":  "Confirmed",
+                       "scopeReason":  null,
+                       "observability":  "Partial",
+                       "confidence":  0.7,
+                       "source":  "Polling"
+                   }
+               ]
+}

@@ -76,6 +76,7 @@ public static class Program
     {
         var token = options.Token ?? RandomNumberGenerator.GetHexString(32);
         var hub = new SseHub();
+        var tickets = new StreamTickets();
         var manager = new SessionManager(hub, options);
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -118,7 +119,12 @@ public static class Program
                 && !context.Request.Path.StartsWithSegments("/api/health"))
             {
                 var authorization = context.Request.Headers.Authorization.ToString();
-                if (!TokenEquals(authorization, token))
+                var streamTicket = context.Request.Query["ticket"].ToString();
+                var isStream = context.Request.Path.Value?.EndsWith("/stream", StringComparison.Ordinal) == true;
+                var sessionId = isStream ? StreamSessionId(context) : Guid.Empty;
+
+                if (!TokenEquals(authorization, token)
+                    && !(isStream && streamTicket.Length > 0 && tickets.Consume(streamTicket, sessionId)))
                 {
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     await context.Response.WriteAsJsonAsync(new { error = "bearer token required" }).ConfigureAwait(false);
@@ -270,6 +276,22 @@ public static class Program
             }, AgentJson.Options);
         });
 
+        app.MapGet("/api/sessions/{id:guid}/scores", (Guid id) =>
+        {
+            var session = manager.Get(id);
+            return session is null
+                ? Results.NotFound(new { error = "session not found" })
+                : Results.Json(
+                    session.ScoreHistory().Select(point => new
+                    {
+                        ts = point.Ts,
+                        score = point.Score,
+                        peak = point.Peak,
+                        band = point.Band,
+                    }).ToArray(),
+                    AgentJson.Options);
+        });
+
         app.MapGet("/api/sessions/{id:guid}/timeline", (Guid id, HttpContext context) =>
         {
             var session = manager.Get(id);
@@ -294,6 +316,17 @@ public static class Program
             }).ToArray();
 
             return Results.Json(new { events, detections }, AgentJson.Options);
+        });
+
+        app.MapPost("/api/sessions/{id:guid}/stream-ticket", (Guid id) =>
+        {
+            if (manager.Get(id) is null)
+            {
+                return Results.NotFound(new { error = "session not found" });
+            }
+
+            var (ticket, expires) = tickets.Issue(id);
+            return Results.Json(new { ticket, expiresUtc = expires }, AgentJson.Options);
         });
 
         app.MapGet("/api/sessions/{id:guid}/stream", async (HttpContext context, Guid id) =>
@@ -415,8 +448,22 @@ public static class Program
         return 0;
     }
 
-    private static bool IsExpectedHost(HttpRequest request, int port)
+    /// <summary>
+    /// The session id in `/api/sessions/{id}/stream`. Route values are populated by the time this
+    /// middleware runs, but the path is parsed too so the guard never depends on that ordering.
+    /// </summary>
+    private static Guid StreamSessionId(HttpContext context)
     {
+        if (Guid.TryParse(context.Request.RouteValues["id"]?.ToString(), out var routed))
+        {
+            return routed;
+        }
+
+        var segments = context.Request.Path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        return segments.Length >= 2 && Guid.TryParse(segments[1], out var parsed) ? parsed : Guid.Empty;
+    }
+
+    private static bool IsExpectedHost(HttpRequest request, int port)    {
         if (port == 0)
         {
             return true;

@@ -1,0 +1,21 @@
+﻿[{
+    "id":  "1791e84f-28fd-463d-9807-b6919376de45",
+    "targetPath":  "C:\\Windows\\System32\\cmd.exe",
+    "rootPid":  6320,
+    "status":  "stopped",
+    "startedUtc":  "2026-11-09T13:25:24.2383544+00:00",
+    "endedUtc":  "2026-11-09T13:25:31.8904881+00:00",
+    "verdict":  "Malicious",
+    "score":  66.6,
+    "peakScore":  66.7,
+    "databasePath":  "C:\\Users\\kamal\\AppData\\Local\\Temp\\argus-fixtures-e2a3b899\\session.db",
+    "recordPath":  "C:\\Users\\kamal\\AppData\\Local\\Temp\\argus-fixtures-e2a3b899\\session.jsonl",
+    "coverage":  {
+                     "complete":  true,
+                     "gaps":  0,
+                     "reasons":  [
+
+                                 ],
+                     "statement":  "No collection gaps were reported: every event the sensor produced reached the analysis."
+                 }
+}]

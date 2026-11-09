@@ -1,0 +1,56 @@
+@import 'tailwindcss';
+
+/* Dark-first console. The palette is deliberately small: slate base, one accent per verdict, no
+   gradients and no animated "scanning" theatre — the trust proposition is legibility. */
+@theme {
+  --color-ink-950: #0b0e14;
+  --color-ink-900: #10141c;
+  --color-ink-850: #151a24;
+  --color-ink-800: #1b2230;
+  --color-ink-700: #27303f;
+  --color-ink-600: #3a4557;
+  --color-ink-400: #6b7787;
+  --color-ink-300: #939eae;
+  --color-ink-100: #dfe5ee;
+
+  --color-benign: #3ec4a0;
+  --color-suspicious: #f5a524;
+  --color-malicious: #e5484d;
+  --color-unknown: #7c8ba1;
+
+  --font-mono: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Focus is always visible: the whole dashboard is reachable by keyboard. */
+:focus-visible {
+  outline: 2px solid var(--color-benign);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Dense data rows; the comfortable toggle widens them via a data attribute on <html>. */
+[data-density='comfortable'] .row-dense {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}

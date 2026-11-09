@@ -1,0 +1,10 @@
+﻿[{
+    "pid":  2300,
+    "parentPid":  null,
+    "imageName":  "notepad.exe",
+    "imagePath":  "C:\\Windows\\System32\\notepad.exe",
+    "commandLine":  null,
+    "startedUtc":  "2026-11-09T13:13:57.6931148+00:00",
+    "scope":  "Root",
+    "scopeReason":  null
+}]
