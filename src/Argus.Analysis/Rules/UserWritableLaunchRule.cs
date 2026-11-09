@@ -50,6 +50,16 @@ public sealed class UserWritableLaunchRule : IEventRule
             yield break;
         }
 
+        // The monitored application is launched by Argus, not by the program under test, so its own
+        // location is not a behaviour of the session. Measured in the benign corpus (2026-11-09): a
+        // per-user install such as %LOCALAPPDATA%\Programs\Python\Python312\python.exe or Qoder
+        // tripped this rule for merely being where the operator's app is installed. Children started
+        // from a writable directory still report — that is the signal this rule exists for.
+        if (current.Pid == context.RootPid)
+        {
+            yield break;
+        }
+
         var pathKey = PathKey.Canonicalize(current.ImagePath);
         if (string.IsNullOrEmpty(pathKey) || !pathKey.Contains('\\'))
         {
@@ -65,6 +75,23 @@ public sealed class UserWritableLaunchRule : IEventRule
 
         var marker = Array.Find(WritableMarkers, m => pathKey.Contains(m, StringComparison.Ordinal));
         if (marker is null)
+        {
+            yield break;
+        }
+
+        // A program that restarts itself from the directory it is installed in has not staged
+        // anything: `%LOCALAPPDATA%\Programs` is where per-user installations live, and the
+        // Electron IDE relaunching its own binary there was the last corpus hit (measured
+        // 2026-11-09). The comparison is against the monitored application's own directory, so a
+        // download or temp drop — P-007's actual subject — is unaffected, and it is a directory
+        // comparison rather than a hash so a payload in the same folder is still one directory away
+        // from being exempt (P-008 and F-007 speak about that case).
+        if (context.Processes.TryGet(context.RootPid, out var root)
+            && !string.IsNullOrEmpty(root.ImagePath)
+            && string.Equals(
+                PathKey.DirectoryName(PathKey.Canonicalize(root.ImagePath)),
+                PathKey.DirectoryName(pathKey),
+                StringComparison.Ordinal))
         {
             yield break;
         }

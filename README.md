@@ -24,8 +24,8 @@ malicious. It does not scan a file and print a verdict.
 
 Full plan and phase acceptance criteria: [`PLAN.md`](PLAN.md).
 
-**What is verified today:** the full Phase 3 rule catalogue — **23 of 23 rules** — with **243 unit
-tests** (96 core, 136 analysis, 11 storage) and **51 recorded scenarios** replaying through the real
+**What is verified today:** the full Phase 3 rule catalogue — **23 of 23 rules** — with **248 unit
+tests** (96 core, 141 analysis, 11 storage) and **54 recorded scenarios** replaying through the real
 pipeline with asserted verdicts, each rule carrying at least one firing and one quiet twin. SQLite
 persistence and FTS search round-trip. Live ETW sessions on Windows that produced real `F-001`,
 `F-002`, `F-003`, `F-004`, `F-007`, `F-008`, `N-005`, `P-005` and `X-002` detections from benign and
@@ -79,6 +79,7 @@ src/Argus.Simulator   scenario files, replay driver, expectation assertions
 src/Argus.Cli         `argus` — replay, rules, selftest
 tests/                unit tests + tests/fixtures/scenarios/*.jsonl
 docs/RULES.md         rule catalogue, scoring model, how to add a rule
+docs/BENIGN-CORPUS.md measured false-positive baseline: six benign apps, every detection triaged
 docs/HANDOFF.md       Windows VM handoff: state, invariants, pitfalls, next tasks
 ```
 

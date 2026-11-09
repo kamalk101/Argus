@@ -90,7 +90,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **243 tests** (96 core, 136 analysis, 11 storage), **51/51** asserted
+Current automated counts: **248 tests** (96 core, 141 analysis, 11 storage), **54/54** asserted
 replay scenarios, and **all 23 rules** in `PLAN.md` §6.3 shipped (`F-001` … `F-008`, `N-001` … `N-005`,
 `P-001` … `P-008`, `X-001`, `X-002`).
 
@@ -993,7 +993,7 @@ children under `P-002` when the parent is an installer or IDE (measured and clos
 exemption now needs a signature as well as an installer-shaped name).
 
 Two things worth picking up from §12.11. First, the metadata race that hides signatures for
-short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.15.
+short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.16.
 Second, whether F-001 plus X-002 on a single write *should* reach Malicious: fixture 46 scores
 39.6 rather than 85 because both carry the file category and the scorer correctly refuses to treat
 them as independent. That is a grouping decision, not a rule change.
@@ -1088,7 +1088,45 @@ unit tests in `RuleTests` and a storage round-trip assertion for the signature.
 
 Tests: 243 (96 core, 136 analysis, 11 storage); 51/51 fixtures.
 
-### 12.15 A bounded metadata retry: measured, and not shipped
+### 12.15 Benign corpus: six applications, four findings, three rules corrected
+
+PLAN.md §11.1 asks for a benign corpus with a triage log. It now exists as
+`docs/BENIGN-CORPUS.md`, produced by `scripts/corpus.ps1` so every number is reproducible:
+notepad (typed and saved), 7-Zip (compress + extract), Python (hash and file I/O), `dotnet run` of a
+console project, Chrome on a local page, and the Electron IDE opening a 30-folder workspace.
+
+The first run produced four findings. Three were rule bugs and were fixed on the evidence; the fourth
+was the rule working.
+
+| Target | Then | Now | Cause of the finding |
+| --- | --- | --- | --- |
+| `dotnet run` | Suspicious 37.1 (`F-007`) | Benign 0.0 | Roslyn unpacked 8 analyzers as DLLs into `%TEMP%\VBCSCompiler` |
+| `Qoder.exe` | Suspicious 46.2 (`P-004`, `P-006` ×2, `N-004`) | Benign 0.0 | per-user install under `%LOCALAPPDATA%\Programs`, Electron self-relaunch |
+| `chrome.exe` | Benign 15.9 (`P-006` ×4) | Benign 0.0 | renderer/GPU/utility/crashpad are `chrome.exe --type=…` |
+| `python.exe` | Suspicious 9.6 (`P-004`) | Benign 0.0 | the application under test is a per-user install |
+
+**F-007 now ignores the compiler's loader cache.** Only `.dll` files under `\vbcscompiler\` are
+excluded; an `.exe` dropped there still fires (asserted).
+
+**P-004 no longer reports the subject of the session, or its self-relaunch.** The process Argus
+launched is not behaviour of the application, and neither is an Electron app restarting its own
+binary out of its install folder. Both are directory comparisons, and a helper staged in `%TEMP%` by
+the same application still reports — that is fixture 52.
+
+**P-006 ignores self-spawns.** A launch whose image equals its *parent's* image is multi-process
+architecture, not enumeration. The discovery shape still counts (same test that always covered it).
+
+`N-004` in the IDE run was left alone: a public address with no lookup in the window is exactly what
+the rule describes, it is severity 35 and never a verdict on its own.
+
+Final corpus: six of six at **Benign 0.0, zero detections, zero gaps** — inside §11.1's expectation
+(risk < 20, nothing at severity ≥ 80) with the margin coming from measurement, not from suppression.
+VLC is not installed on this machine and VS Code proper was not present (the Electron IDE was
+`Qoder.exe`, same architecture), so neither is claimed.
+
+Fixtures 52–54 plus five unit tests. Tests: 248 (96 core, 141 analysis, 11 storage); 54/54 fixtures.
+
+### 12.16 A bounded metadata retry: measured, and not shipped
 
 The suggestion at the end of §12.11 was to retry the process-metadata lookup so short-lived processes are
 enriched more often. It was implemented and measured before being documented as an improvement, and it

@@ -58,6 +58,21 @@ public sealed class RepeatedFlagsRule : IEventRule, IWindowedRule
             yield break;
         }
 
+        // A process started by a copy of itself with a switch is how multi-process applications are
+        // built, not how information is enumerated. Measured in the benign corpus (2026-11-09):
+        // chrome.exe spawning chrome.exe --type=renderer/gpu-process/utility produced four findings
+        // in one 25 s session, and the Electron IDE did the same twice. Distinct-parent launches
+        // (the discovery shape this rule is for) are unaffected.
+        if (current.ParentPid is { } parentPid
+            && context.Processes.TryGet(parentPid, out var parent)
+            && string.Equals(
+                ProcessNames.Normalize(parent.ImageName ?? parent.ImagePath),
+                image,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            yield break;
+        }
+
         var since = context.Now - Window;
         var earlier = context.Correlation.Recent(
             since,

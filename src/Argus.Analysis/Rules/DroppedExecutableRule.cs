@@ -76,6 +76,11 @@ public sealed class DroppedExecutableRule : IEventRule
             yield break;
         }
 
+        if (IsCompilerCache(pathKey, extension))
+        {
+            yield break;
+        }
+
         yield return new RuleFinding
         {
             Rule = Metadata,
@@ -119,4 +124,16 @@ public sealed class DroppedExecutableRule : IEventRule
             ProcessNames.Normalize(context.Processes.ImageNameOf(context.Event.Pid)),
             ProcessNames.PowerShellHosts);
     }
+
+    /// <summary>
+    /// The C# compiler server unpacks the analyzers it loads into
+    /// <c>%TEMP%\VBCSCompiler\AnalyzerAssemblyLoader\&lt;hash&gt;\&lt;guid&gt;\*.dll</c> on every build.
+    /// Measured in the benign corpus (2026-11-09): one `dotnet run` of a console project created
+    /// eight such DLLs and this rule reported them, so an ordinary build reached Suspicious 37.1.
+    /// Only the DLLs in that cache are excluded — an executable or script dropped in the same
+    /// directory still fires, because only a loader cache looks like this.
+    /// </summary>
+    private static bool IsCompilerCache(string pathKey, string extension) =>
+        extension.Equals(".dll", StringComparison.OrdinalIgnoreCase)
+        && pathKey.Contains(@"\vbcscompiler\", StringComparison.OrdinalIgnoreCase);
 }

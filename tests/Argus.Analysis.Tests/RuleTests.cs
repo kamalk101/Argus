@@ -339,6 +339,33 @@ public sealed class RuleTests
     }
 
     [Fact]
+    public void Compiler_analyzer_cache_in_temp_is_not_a_dropped_payload()
+    {
+        // Measured in the benign corpus: one `dotnet run` created eight analyzer DLLs under
+        // %TEMP%\VBCSCompiler and F-007 reported them, taking a plain build to Suspicious 37.1.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\kamal\AppData\Local\Temp\VBCSCompiler\AnalyzerAssemblyLoader\0cdae315\c8cf9776\Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll", 2, effect: FileEffect.CreatedOrTruncated),
+        ]);
+
+        Assert.DoesNotContain("F-007", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void An_executable_in_the_compiler_cache_still_fires()
+    {
+        // Only DLLs in that cache are a loader artefact; a dropped .exe there is still a drop.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\kamal\AppData\Local\Temp\VBCSCompiler\stage2.exe", 2, effect: FileEffect.CreatedOrTruncated),
+        ]);
+
+        Assert.Contains("F-007", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
     public void Risky_port_on_public_address_is_flagged()
     {
         var (snapshot, _) = Fx.Run(

@@ -56,6 +56,53 @@ public sealed class ProcessChannelRuleTests
     }
 
     [Fact]
+    public void The_monitored_app_being_a_per_user_install_is_not_its_own_finding()
+    {
+        // Measured in the benign corpus: a per-user Python and the Electron IDE are installed under
+        // %LOCALAPPDATA%\Programs, and P-004 reported the application under test for existing there.
+        // Argus launched it, so that is not behaviour of the session; its children elsewhere report.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.ProcessStart(Fx.RootPid, 9999, "python.exe", @"C:\Users\kamal\AppData\Local\Programs\Python\Python312\python.exe", signature: SignatureStatus.Valid),
+            Fx.ProcessStart(5120, Fx.RootPid, "helper.exe", @"C:\Users\kamal\AppData\Local\Temp\helper.exe", "helper.exe --stage", 2),
+        ]);
+
+        var finding = Assert.Single(snapshot.Detections, d => d.RuleId == "P-004");
+        Assert.Contains("helper.exe", finding.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("python.exe", finding.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void An_app_restarting_itself_from_its_own_install_directory_is_not_flagged()
+    {
+        // The Electron IDE relaunches its own binary out of %LOCALAPPDATA%\Programs when it opens a
+        // window; that is its install location, not a staging directory.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.ProcessStart(Fx.RootPid, 9999, "Qoder.exe", @"C:\Users\kamal\AppData\Local\Programs\Qoder\Qoder.exe", signature: SignatureStatus.Valid),
+            Fx.ProcessStart(5100, Fx.RootPid, "Qoder.exe", @"C:\Users\kamal\AppData\Local\Programs\Qoder\Qoder.exe", "Qoder.exe --type=renderer", 2),
+        ]);
+
+        Assert.DoesNotContain("P-004", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void A_process_started_by_a_copy_of_itself_is_not_switch_cycling()
+    {
+        // Chrome and Electron build their renderer, GPU and utility processes this way; measured in
+        // the benign corpus as four P-006 findings in one 25 s browser session.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.ProcessStart(Fx.RootPid, 9999, "chrome.exe", @"C:\Program Files\Google\Chrome\Application\chrome.exe", "chrome.exe", signature: SignatureStatus.Valid),
+            Fx.ProcessStart(5200, Fx.RootPid, "chrome.exe", @"C:\Program Files\Google\Chrome\Application\chrome.exe", "chrome.exe --type=renderer", 2),
+            Fx.ProcessStart(5210, Fx.RootPid, "chrome.exe", @"C:\Program Files\Google\Chrome\Application\chrome.exe", "chrome.exe --type=gpu-process", 3),
+            Fx.ProcessStart(5220, Fx.RootPid, "chrome.exe", @"C:\Program Files\Google\Chrome\Application\chrome.exe", "chrome.exe --type=utility", 4),
+        ]);
+
+        Assert.DoesNotContain("P-006", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
     public void One_tool_driven_with_different_switches_is_flagged()
     {
         var (snapshot, _) = Fx.Run(

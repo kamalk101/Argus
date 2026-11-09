@@ -276,6 +276,26 @@ escalation step instead of hundreds of duplicate findings. Bursts of writes to e
 a compiler or a scanner must stay quiet. All of these numbers live in `RuleSettings` and can be
 overridden with `--rules profile.json`; each finding records the values it ran with.
 
+### P-004 and P-006: what the benign corpus changed
+
+Both rules were corrected by measurement rather than tuning instinct; the sessions and numbers are in
+[`BENIGN-CORPUS.md`](BENIGN-CORPUS.md).
+
+`P-004` (launched from a user-writable directory) reported the application **under test** whenever it
+was a per-user installation — `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` and the Electron
+IDE both scored it for existing where they are installed. Argus launched that process itself, so its
+location is the operator's choice and not behaviour of the session. The rule now skips the monitored
+root and a launch whose image directory is the root's own directory (an Electron app relaunching its
+binary out of its install folder), and nothing else: a helper staged in `%TEMP%` by the same
+application still reports. A payload dropped in the application's own folder stays covered by `F-007`
+for the drop and `P-008` for a process there with no observed creator.
+
+`P-006` (one program started again and again with different switches) reported a browser's own
+children: Chrome builds its renderer, GPU, utility and crashpad processes by starting copies of
+`chrome.exe` with a different `--type` switch, so one 25 s session produced four findings. The rule
+now ignores a launch whose image equals its **parent's** image. The discovery shape it exists for —
+one tool driven repeatedly by a script — has a different parent per invocation and is unaffected.
+
 ### F-007: the interpreter's own scratch file
 
 PowerShell touches `%TEMP%\__PSScriptPolicyTest_<random>.ps1` (and a `.psm1` companion) on every
@@ -289,6 +309,12 @@ scores **Benign 0.0 with zero detections**, while the same tree writing `%TEMP%\
 through `Set-Content` still produces `F-007` (**Suspicious 11.3**). Both shapes are fixtures 48 and
 49, and the exclusion's narrowness is held by two tests: the same file name written by a
 non-PowerShell process, and PowerShell writing any other script into `%TEMP%`, both still fire.
+
+The C# compiler server has the same shape and now gets the same treatment: it unpacks the analyzers
+it loads as DLLs into `%TEMP%\VBCSCompiler\AnalyzerAssemblyLoader\<hash>\<guid>\` on every build, and
+`F-007` reported eight of them for one `dotnet run` of a six-line console project, taking a plain
+build to Suspicious 37.1. Only `.dll` files under `\vbcscompiler\` are excluded — an executable
+dropped in that directory still fires — because only a loader cache looks like that.
 
 ### Not a write
 
