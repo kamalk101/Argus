@@ -86,7 +86,7 @@ the rules that must not be broken while continuing the work.
 - `7z.exe` or any non-trivial application.
 - WebView2/dashboard (Phase 4).
 
-Current automated counts: **237 tests** (96 core, 130 analysis, 11 storage), **47/47** asserted
+Current automated counts: **240 tests** (96 core, 133 analysis, 11 storage), **49/49** asserted
 replay scenarios, and **all 23 rules** in `PLAN.md` §6.3 shipped (`F-001` … `F-008`, `N-001` … `N-005`,
 `P-001` … `P-008`, `X-001`, `X-002`).
 
@@ -436,8 +436,14 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   one `CREATE_ALWAYS` create and zero writes for a 53 KB `copy /y`. Any rule that waits for a
   write to confirm a drop will miss the most common drop method — use the create disposition.
 - A child `powershell.exe` writes its own `__psscriptpolicytest_*.ps1` into `%TEMP%` on every
-  invocation, which `F-007` correctly but noisily reports. Expect it in interpreter-heavy
-  trees and do not "fix" it by suppressing script drops.
+  invocation. Measured live (2026-11-09): a monitored `cmd.exe /c` batch running
+  `powershell -NoProfile -Command "Get-Date | Out-Null"` recorded that create and `F-007` reported
+  it, scoring a benign one-liner **Suspicious 19.4** (1963 events, 0 gaps). `F-007` now excludes it
+  under three simultaneous conditions — name prefix `__PSScriptPolicyTest_`, a `temp` directory, and
+  the writer being `powershell.exe`/`pwsh.exe`; the same probe then scores **Benign 0.0, 0
+  detections**, while the same tree writing `%TEMP%\argus-f007-probe.ps1` still fires at
+  **Suspicious 11.3**. Do not widen this into "interpreters may write scripts to %TEMP%": fixtures
+  48/49 and two unit tests hold the boundary.
 - **Process image names are not always `x.exe`.** Live ETW reported `ImageFileName="schtasks"`
   and `"PING.EXE"` in the same session, and one `schtasks /create` arrived with **no command
   line at all**. Match image names through `ProcessNames.IsOneOf` (accepts both spellings), and
@@ -472,12 +478,17 @@ be replayed on Linux with the same `Argus.Cli replay` command.
   scope check, so unrelated system file activity pushed it to 10 675 events/s and reported a
   `volume-throttle` gap in a session whose own target was doing very little (which also marked a
   clean run `incomplete`). Machine-wide volume is not the session's volume.
-- **Deletions are invisible to this sensor.** `del`/`DeleteFile` produces no file event at all:
-  a live probe deleted 26 files and recorded **zero** `fileDelete` events, while the same probe's
-  renames and writes were all present. The kernel `FileIO` subscription reports create, write, read
-  and rename, not delete. `F-006` is built on the rewrite-then-rename shape for exactly this
-  reason, and a delete-only wiper is undetected. Closing this needs another sensor (minifilter, or
-  `FileIO/SetInfo` with `FileDispositionInformation`) — do not paper over it with a rule.
+- **Most deletions are invisible to this sensor.** `del` produces no file event for the
+  disposition-based delete path `cmd.exe` uses: a live probe deleted 26 files and recorded **zero**
+  `fileDelete` events, and a later probe deleting a dropped `.ps1` with `del` also recorded none,
+  while the same probe's renames and writes were all present. One delete shape *is* delivered: when
+  the deleting program calls the `DeleteFile` API (PowerShell's `Remove-Item`), the record arrives
+  and maps to `fileDelete` — a monitor run of `powershell -NoProfile -Command "Get-Date"` produced
+  two (`__PSScriptPolicyTest_*.ps1` plus its `.psm1` companion). The kernel `FileIO` subscription
+  reports create, write, read, rename and that delete API, not disposition-based removal. `F-006` is
+  built on the rewrite-then-rename shape for exactly this reason, and a delete-only wiper is
+  undetected. Closing this needs another sensor (minifilter, or `FileIO/SetInfo` with
+  `FileDispositionInformation`) — do not paper over it with a rule.
 - **`HasRoot` decides whether events are forwarded at all.** Events are buffered while it is
   false, so every path that names a root must flip it — `SeedRoot` does, for both orderings.
   Leaving it to `AttachRoot` alone made the legacy path (root supplied up front) buffer forever;
@@ -563,6 +574,9 @@ replay: Suspicious 35.1, 2 detections, both F-007
   F-007  __psscriptpolicytest_*.ps1 in %TEMP%        (the child powershell's own probe)
 no F-005 at all: the PING.EXE open and the CatRoot2 directory create are correctly ignored
 ```
+
+The second finding was noise and is gone as of §12.13: the policy-test scratch file is now
+recognised as the interpreter's own and excluded, while `stage3.exe` still fires.
 
 Before the fix the same probe produced `F-005 "write to System32"` for `PING.EXE`. After it,
 precision was kept in the other direction too: gating on `FileWrite` alone would have missed
@@ -962,18 +976,60 @@ the name-without-parent quiet twin.
 The catalogue is complete (23 of 23, each with firing and quiet fixtures). What remains for Phase 3
 is verification under real activity rather than new rules: replay the live probes on the VM and
 confirm the replayed verdict matches, and keep `docs/RULES.md` in step with the generated table. Use
-`FileChangeEvidence` for every file rule — do not reintroduce "create means wrote". Known noise
-to tune with fixtures rather than suppression: the interpreter scratch `.ps1` in `%TEMP%`
-(§10), and utility `cmd.exe`/`powershell.exe` children under `P-002` when the parent is an
-installer or IDE.
+`FileChangeEvidence` for every file rule — do not reintroduce "create means wrote". Remaining
+known noise to tune with fixtures rather than suppression: utility `cmd.exe`/`powershell.exe`
+children under `P-002` when the parent is an installer or IDE (the interpreter scratch `.ps1` in
+`%TEMP%` was measured and closed, see §12.13).
 
-Two things worth picking up from§12.11. First, the metadata race that hides signatures for short-lived
-processes — a bounded retry was tried and **rejected on measurement**, see §12.12. Second, whether F-001
-plus X-002 on a single write *should* reach Malicious: fixture 46 scores 39.6 rather than 85 because
-both carry the file category and the scorer correctly refuses to treat them as independent. That is a
-grouping decision, not a rule change.
+Two things worth picking up from §12.11. First, the metadata race that hides signatures for
+short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.14.
+Second, whether F-001 plus X-002 on a single write *should* reach Malicious: fixture 46 scores
+39.6 rather than 85 because both carry the file category and the scorer correctly refuses to treat
+them as independent. That is a grouping decision, not a rule change.
 
-### 12.12 A bounded metadata retry: measured, and not shipped
+### 12.13 F-007 noise: the interpreter's own scratch file
+
+§12.12 left two noise shapes to tune "with fixtures rather than suppression". The first of them was
+measured on 2026-11-09 and closed on the evidence.
+
+Probe: a monitored `cmd.exe /c` batch whose body is one line,
+`powershell -NoProfile -Command "Get-Date | Out-Null"`. Nothing else happens — no writes of the
+application's own, no network, 0 gaps, complete coverage.
+
+| Build | Verdict | Detections |
+| --- | --- | --- |
+| before | **Suspicious 19.4** | `F-007` ×1 |
+| after | **Benign 0.0** | none |
+
+The finding was PowerShell's own execution-policy probe: every invocation touches
+`%TEMP%\__PSScriptPolicyTest_<random>.ps1`, and the kernel reports it as `createdOrTruncated` plus a
+write, which is exactly the shape `F-007` is built to catch. No suppression rule is right here —
+the file *was* created in a writable location by the tree — so the exclusion is a named exception
+with three simultaneous conditions: name prefix `__PSScriptPolicyTest_`, a `temp` directory, and the
+writer itself being `powershell.exe` or `pwsh.exe`.
+
+The boundary had to be proven, not asserted. Two unit tests and two fixtures hold it:
+
+- the same file name written by a non-PowerShell process still fires (an attacker naming a payload
+  after the scratch file gains nothing);
+- PowerShell writing any *other* script into `%TEMP%` still fires — verified live, not only in a
+  fixture: `Set-Content -Path $env:TEMP\argus-f007-probe.ps1` inside the same monitored tree gives
+  **Suspicious 11.3** with `F-007`.
+
+Fixtures 48 (`interpreter-scratch-benign`) and 49 (`interpreter-drops-script`), plus the tests
+`PowerShell_policy_scratch_file_is_not_a_dropped_payload`,
+`PowerShell_scratch_name_written_by_another_process_still_fires` and
+`PowerShell_writing_its_own_named_script_in_temp_still_fires`. The probe file was removed by the batch
+itself and the `%TEMP%` folder was checked afterwards — nothing was left behind.
+
+The second §12.12 noise item — utility `cmd.exe`/`powershell.exe` children under `P-002` when the
+parent is an installer or an IDE — is still open: `ExpectedInterpreterParents` already carries
+`msiexec.exe`, `setup.exe`, `installer.exe`, `update.exe`, `devenv.exe` and `code.exe`, but no live
+probe has measured an installer or IDE tree yet, so the list is unverified rather than tuned.
+
+Tests: 240 (96 core, 133 analysis, 11 storage); 49/49 fixtures.
+
+### 12.14 A bounded metadata retry: measured, and not shipped
 
 The suggestion at the end of§12.11 was to retry the process-metadata lookup so short-lived processes are
 enriched more often. It was implemented and measured before being documented as an improvement, and it

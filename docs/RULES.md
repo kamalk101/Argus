@@ -236,25 +236,41 @@ either keeps the extension or works inside one folder, so breadth plus an append
 signal. Renames that merely drop an intermediate extension (`.part`, `.crdownload`, `.tmp`) are
 never counted: finishing a download looks identical otherwise.
 
-**The delete half of this rule does not exist, because the sensor cannot see file deletions.**
-Measured live: 26 files deleted by `del` produced **zero** file events, and a second probe with five
-deletes, one second apart, also produced zero — the kernel `FileIO` subscription used here reports
-creates, writes, reads and renames, but not `del`/`DeleteFile`. Removing a *directory* (`rd /s /q`)
-did surface a `fileDelete` for the directory path in two runs out of three, which is a narrower
-signal than it looks: it names a folder, not the files inside it. So a wiper that only deletes is
-invisible to `F-006` and to the whole pipeline; `F-006` keys on the rewrite-then-rename shape
-encryptors leave behind. Never present a quiet `F-006` as evidence that nothing was destroyed, and
-do not "fix" this by treating a create as a delete. Closing the gap needs a different sensor (a
-minifilter or `FileIO/SetInfo` with `FileDispositionInformation`), and it is recorded as an open item
-in `docs/HANDOFF.md` §10.
+**The delete half of this rule does not exist, because the sensor mostly cannot see file deletions.**
+Measured live: 26 files deleted by `del` produced **zero** file events, and so did a later probe that
+deleted a dropped `.ps1` with `del` — the kernel `FileIO` subscription used here reports creates,
+writes, reads and renames for the disposition-based delete path that `cmd.exe` uses. One delete
+shape *is* delivered: when the deleting program calls the `DeleteFile` API instead, the record
+arrives and maps to `fileDelete` (measured — PowerShell removing its own `%TEMP%` scratch files
+produced two of them). Removing a *directory* (`rd /s /q`) did surface a `fileDelete` for the
+directory path in two runs out of three, which is a narrower signal than it looks: it names a
+folder, not the files inside it. So a wiper that only deletes is invisible to `F-006` and to the
+whole pipeline; `F-006` keys on the rewrite-then-rename shape encryptors leave behind. Never
+present a quiet `F-006` as evidence that nothing was destroyed, and do not "fix" this by treating a
+create as a delete. Closing the gap needs a different sensor (a minifilter or `FileIO/SetInfo` with
+`FileDispositionInformation`), and it is recorded as an open item in `docs/HANDOFF.md` §10.
 
 ### Thresholds and volume
 
 `F-004` and `F-006` count events in a 60 s window from the correlation index and fire once per
 threshold crossing (200, 400, 600 … creates; 10, 20, 30 … renames), so one detection represents one
 escalation step instead of hundreds of duplicate findings. Bursts of writes to existing files and bursts of opens do not count —
-a compiler or a scanner must stay quiet. Thresholds are constants in the rule class today;
-`rules.json` binding is still open.
+a compiler or a scanner must stay quiet. All of these numbers live in `RuleSettings` and can be
+overridden with `--rules profile.json`; each finding records the values it ran with.
+
+### F-007: the interpreter's own scratch file
+
+PowerShell touches `%TEMP%\__PSScriptPolicyTest_<random>.ps1` (and a `.psm1` companion) on every
+invocation while it probes execution policy. Measured live on the monitor: a `cmd.exe /c` batch
+running `powershell -NoProfile -Command "Get-Date | Out-Null"` recorded that create plus its write,
+and `F-007` reported it — a benign one-liner scored **Suspicious 19.4** on nothing else. The rule now
+excludes exactly that file, and only when all three conditions hold: the file name starts with
+`__PSScriptPolicyTest_`, it sits under a `temp` directory, and the process writing it is
+`powershell.exe` or `pwsh.exe`. Nothing else is exempt. Re-measured after the change, the same probe
+scores **Benign 0.0 with zero detections**, while the same tree writing `%TEMP%\argus-f007-probe.ps1`
+through `Set-Content` still produces `F-007` (**Suspicious 11.3**). Both shapes are fixtures 48 and
+49, and the exclusion's narrowness is held by two tests: the same file name written by a
+non-PowerShell process, and PowerShell writing any other script into `%TEMP%`, both still fire.
 
 ### Not a write
 

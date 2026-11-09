@@ -13,6 +13,12 @@ internal static class ProcessNames
         "mshta.exe", "rundll32.exe", "regsvr32.exe", "bitsadmin.exe",
     };
 
+    /// <summary>PowerShell hosts, which write their own execution-policy scratch file.</summary>
+    public static readonly HashSet<string> PowerShellHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "powershell.exe", "pwsh.exe",
+    };
+
     /// <summary>
     /// Parents for which spawning an interpreter is ordinary: shells, terminals,
     /// IDEs, installers and service hosts.

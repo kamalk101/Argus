@@ -252,6 +252,51 @@ public sealed class RuleTests
     }
 
     [Fact]
+    public void PowerShell_policy_scratch_file_is_not_a_dropped_payload()
+    {
+        // Measured live: `cmd /c powershell -NoProfile -Command Get-Date` writes
+        // __PSScriptPolicyTest_<random>.ps1 into %TEMP% on every invocation.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.ProcessStart(6020, Fx.RootPid, "powershell.exe", @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "powershell.exe -NoProfile -Command Get-Date", 1),
+            Fx.FileOp(EventKind.FileCreate, 6020, @"C:\Users\kamal\AppData\Local\Temp\__PSScriptPolicyTest_tq2ri1id.wvs.ps1", 2, effect: FileEffect.CreatedOrTruncated),
+            Fx.FileOp(EventKind.FileWrite, 6020, @"C:\Users\kamal\AppData\Local\Temp\__PSScriptPolicyTest_tq2ri1id.wvs.ps1", 3, bytesOut: 128),
+        ]);
+
+        Assert.DoesNotContain("F-007", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void PowerShell_scratch_name_written_by_another_process_still_fires()
+    {
+        // The exclusion is scoped to the interpreter itself: a non-PowerShell writer using
+        // the same name is exactly the evasion the narrow predicate has to keep catching.
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.FileOp(EventKind.FileCreate, Fx.RootPid, @"C:\Users\kamal\AppData\Local\Temp\__PSScriptPolicyTest_tq2ri1id.wvs.ps1", 2, effect: FileEffect.CreatedOrTruncated),
+            Fx.FileOp(EventKind.FileWrite, Fx.RootPid, @"C:\Users\kamal\AppData\Local\Temp\__PSScriptPolicyTest_tq2ri1id.wvs.ps1", 3, bytesOut: 4096),
+        ]);
+
+        Assert.Contains("F-007", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
+    public void PowerShell_writing_its_own_named_script_in_temp_still_fires()
+    {
+        var (snapshot, _) = Fx.Run(
+        [
+            Fx.RootStart(),
+            Fx.ProcessStart(6020, Fx.RootPid, "powershell.exe", @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "powershell.exe -Command iwr", 1),
+            Fx.FileOp(EventKind.FileCreate, 6020, @"C:\Users\kamal\AppData\Local\Temp\stage.ps1", 2, effect: FileEffect.CreatedOrTruncated),
+            Fx.FileOp(EventKind.FileWrite, 6020, @"C:\Users\kamal\AppData\Local\Temp\stage.ps1", 3, bytesOut: 2048),
+        ]);
+
+        Assert.Contains("F-007", Fx.RulesOf(snapshot));
+    }
+
+    [Fact]
     public void Risky_port_on_public_address_is_flagged()
     {
         var (snapshot, _) = Fx.Run(

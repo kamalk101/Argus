@@ -71,6 +71,11 @@ public sealed class DroppedExecutableRule : IEventRule
             yield break;
         }
 
+        if (IsInterpreterScratch(context, pathKey))
+        {
+            yield break;
+        }
+
         yield return new RuleFinding
         {
             Rule = Metadata,
@@ -85,5 +90,33 @@ public sealed class DroppedExecutableRule : IEventRule
             ],
             Target = current.Target,
         };
+    }
+
+    /// <summary>
+    /// PowerShell touches <c>%TEMP%\__PSScriptPolicyTest_&lt;random&gt;.ps1</c> (and a
+    /// <c>.psm1</c> companion) on every invocation while it probes execution policy.
+    /// Measured live: a monitored <c>cmd.exe /c powershell -NoProfile -Command "Get-Date"</c>
+    /// produced one <c>createdOrTruncated</c> create of that file, and this rule reported it,
+    /// so a benign one-liner scored Suspicious 19.4 on nothing else. The exclusion is kept
+    /// narrow on purpose — the file name must match the interpreter's own scratch pattern,
+    /// it must sit in a temp directory, and the process writing it must itself be a PowerShell
+    /// host — so a payload dropped anywhere else, or under any other name, still fires.
+    /// </summary>
+    private static bool IsInterpreterScratch(RuleContext context, string pathKey)
+    {
+        var fileName = PathKey.FileName(pathKey);
+        if (!fileName.StartsWith("__PSScriptPolicyTest_", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!pathKey.Contains(@"\temp\", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return ProcessNames.IsOneOf(
+            ProcessNames.Normalize(context.Processes.ImageNameOf(context.Event.Pid)),
+            ProcessNames.PowerShellHosts);
     }
 }
