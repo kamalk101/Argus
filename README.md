@@ -24,8 +24,8 @@ malicious. It does not scan a file and print a verdict.
 
 Full plan and phase acceptance criteria: [`PLAN.md`](PLAN.md).
 
-**What is verified today:** the full Phase 3 rule catalogue — **23 of 23 rules** — with **248 unit
-tests** (96 core, 141 analysis, 11 storage) and **54 recorded scenarios** replaying through the real
+**What is verified today:** the full Phase 3 rule catalogue — **23 of 23 rules** — with **254 unit
+tests** (102 core, 141 analysis, 11 storage) and **54 recorded scenarios** replaying through the real
 pipeline with asserted verdicts, each rule carrying at least one firing and one quiet twin. A measured
 benign corpus of six applications ([`docs/BENIGN-CORPUS.md`](docs/BENIGN-CORPUS.md)) sits at
 **Benign 0.0 with zero detections and zero gaps**. SQLite persistence and FTS search round-trip.
@@ -36,7 +36,14 @@ rows asserted), a risk chart with detection markers, an evidence chain per detec
 observability badge on every row and a persistent coverage banner. **Playwright tests** run against payloads
 captured from real sessions by `scripts/dashboard-fixtures.ps1`, so the tests cannot pass while a DTO
 breaks the UI, plus a live mode checked against a running agent. Live checks: `scripts/check-stream-ticket.sh` (single-use SSE tickets,
-8/8) and `scripts/check-sse-reconnect.sh` (reconnect recovers the snapshot, 4/4). Live ETW sessions on Windows that produced real `F-001`,
+8/8) and `scripts/check-sse-reconnect.sh` (reconnect recovers the snapshot, 4/4).
+
+The agent serves the built dashboard itself (`--web-root`, auto-detected as `web/dist`), so the UI and
+the API share one origin and the bearer token never leaves loopback. "Monitor an application" opens a
+dialog that shows a file's size, SHA-256 and signature **before** launching it, and `Argus.Desktop`
+(`src/Argus.Desktop`, WinForms + WebView2) starts the elevated agent and opens that dashboard in a
+window. On a machine without the WebView2 *runtime* (Edge alone is not enough) the window says so and
+prints the still-working dashboard URL instead of failing silently. Live ETW sessions on Windows that produced real `F-001`,
 `F-002`, `F-003`, `F-004`, `F-007`, `F-008`, `N-005`, `P-005` and `X-002` detections from benign and
 self-cleaning probes, with the replayed verdict matching the live one. The Windows projects
 (`Argus.Monitor`, `Argus.Agent`) compile on Linux with `EnableWindowsTargeting`, and their
@@ -86,6 +93,7 @@ src/Argus.Monitor     Windows ETW collectors, process metadata, TCP owner table,
 src/Argus.Agent       elevated host: Kestrel API/SSE, live session, JSONL recording, reports
 src/Argus.Simulator   scenario files, replay driver, expectation assertions
 src/Argus.Cli         `argus` — replay, rules, selftest
+src/Argus.Desktop     WinForms + WebView2 shell: starts the agent, shows the dashboard
 web/                  dashboard: React 19 + Vite + TS shell, eight routes, Playwright suite
 tests/                unit tests + tests/fixtures/scenarios/*.jsonl
 docs/RULES.md         rule catalogue, scoring model, how to add a rule
@@ -125,6 +133,8 @@ On Windows (including the `tiny` VM):
 
 ```powershell
 ./scripts/verify.ps1                 # build + tests + replay + selftest
+npm --prefix web install && npm --prefix web run build   # once: the window has no UI without it
+dotnet run --project src/Argus.Desktop   # the window: starts the agent, opens the dashboard
 ./scripts/verify.ps1 -InstallSdk     # if the SDK is missing
 ./scripts/smoke.ps1                  # elevated: self-test + live notepad capture + replay
 ./scripts/verify.ps1 -Smoke          # both, in one command (elevated)

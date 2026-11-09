@@ -74,6 +74,11 @@ test('a complete session says its coverage is complete', async ({ page }) => {
 
 test('Ctrl+K reaches search from another screen', async ({ page }) => {
   await page.goto(url('/timeline'));
+  // The shortcut listener is attached after React mounts. Pressing before that is a test bug, not an
+  // app bug — measured: 1 of 3 repeats failed until the shell was awaited.
+  await expect(page.getByRole('navigation', { name: 'sections' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Timeline' })).toHaveAttribute('aria-current', 'page');
+
   await page.keyboard.press('Control+k');
   const search = page.getByRole('textbox', { name: 'search' });
   await expect(search).toBeFocused();
@@ -163,4 +168,21 @@ test('100k rows scroll without jank and without rendering them all', async ({ pa
   expect(position.top, 'the list reached the end').toBeGreaterThan(position.max * 0.9);
   expect(elapsed, `scroll to the end took ${elapsed} ms`).toBeLessThan(2_000);
   expect(await page.getByRole('row').count(), 'still bounded after scrolling').toBeLessThan(120);
+});
+
+test('the launch dialog says it cannot launch when there is no agent', async ({ page }) => {
+  await page.goto('/?fixtures=benign');
+  await page.getByRole('button', { name: 'Monitor an application' }).first().click();
+
+  const dialog = page.getByRole('dialog', { name: 'Monitor an application' });
+  await expect(dialog).toBeVisible();
+  // Fixture mode must not pretend a launch is possible: a button that silently does nothing would be
+  // read as a broken agent.
+  await expect(dialog.getByText(/This is fixture data/)).toBeVisible();
+  await expect(dialog.getByLabel('executable path')).toBeEditable();
+  await expect(dialog.getByRole('button', { name: 'Check this file' })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Start monitoring' })).toBeDisabled();
+
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toBeHidden();
 });

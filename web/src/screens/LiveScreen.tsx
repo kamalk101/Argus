@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSession } from '../session';
 import { Counter, Panel, StateNote, VerdictPill, Badge } from '../components/ui';
 import { RiskChart } from '../components/RiskChart';
 import { clock, duration, elide, number } from '../lib/format';
-import { getTimeline, listScores, streamUrl } from '../api/client';
+import { getSession, getTimeline, listScores, streamUrl } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import type { MonitorEvent } from '../api/types';
 
@@ -15,7 +16,17 @@ type Link = 'connecting' | 'open' | 'reconnecting' | 'fixture';
  * real state rather than silently showing a stale one.
  */
 export function LiveScreen() {
-  const { session, loading, error, reload } = useSession();
+  const context = useSession();
+  const [params] = useSearchParams();
+  const routeId = params.get('session') ?? undefined;
+
+  // A launch navigates to /live?session=<id>, and the shell may still hold the list from before that
+  // session existed. The URL is the more specific statement, so it wins; the context is the fallback.
+  const named = useAsync(() => (routeId ? getSession(routeId) : Promise.resolve(null)), [routeId]);
+  const session = routeId ? named.data : context.session;
+  const loading = routeId ? named.loading : context.loading;
+  const error = routeId ? named.error : context.error;
+  const reload = routeId ? named.reload : context.reload;
   const id = session?.id;
 
   const timeline = useAsync(() => (id ? getTimeline(id) : Promise.resolve(null)), [id]);

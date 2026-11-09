@@ -91,7 +91,10 @@ export async function getSession(id: string): Promise<SessionState> {
     const wrapped = await fixture<SessionState | { state: SessionState }>('session.json');
     return 'state' in wrapped ? wrapped.state : wrapped;
   }
-  return live<SessionState>(`/api/sessions/${id}`);
+  // Both branches unwrap: `/api/sessions/{id}` answers `{record, state}`, and a screen that asked for
+  // one session should not have to know that.
+  const wrapped = await live<SessionState | { state: SessionState }>(`/api/sessions/${id}`);
+  return 'state' in wrapped ? wrapped.state : wrapped;
 }
 
 export async function getHealth(): Promise<Health> {
@@ -159,6 +162,50 @@ export async function getEvidence(id: string, key: string): Promise<EvidenceResp
     }
   }
   return live<EvidenceResponse>(`/api/sessions/${id}/detections/${encodeURIComponent(key)}`);
+}
+
+/** What a launch would run: the preview the operator sees before anything starts. */
+export interface TargetPreview {
+  exists: boolean;
+  path: string;
+  name?: string;
+  directory?: string;
+  size?: number;
+  sha256?: string | null;
+  signature?: string;
+  executable?: boolean;
+}
+
+export async function inspectTarget(path: string): Promise<TargetPreview> {
+  if (mode === 'fixture') {
+    // No agent to ask; answer honestly rather than inventing a signature.
+    return { exists: false, path };
+  }
+  return live<TargetPreview>(`/api/inspect?path=${encodeURIComponent(path)}`);
+}
+
+export interface StartSessionRequest {
+  path: string;
+  args?: string;
+  mode?: 'launch';
+}
+
+export async function startSession(request: StartSessionRequest): Promise<SessionState> {
+  if (mode === 'fixture') {
+    throw new Error('Fixture mode has no agent to launch a target with.');
+  }
+  return live<SessionState>('/api/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+}
+
+export async function stopSession(id: string): Promise<void> {
+  if (mode === 'fixture') {
+    throw new Error('Fixture mode has no agent to stop.');
+  }
+  await live(`/api/sessions/${id}/stop`, { method: 'POST' });
 }
 
 /**

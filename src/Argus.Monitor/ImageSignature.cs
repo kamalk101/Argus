@@ -30,7 +30,7 @@ using Argus.Core.Events;
 /// element, a failing API — stay <see cref="SignatureStatus.Unknown"/> rather than becoming a claim
 /// of "unsigned".
 /// </summary>
-internal static class ImageSignature
+public static class ImageSignature
 {
     private const uint WtdUiNone = 2;
     private const uint WtdRevokeNone = 0;

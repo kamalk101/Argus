@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>argus</AssemblyName>
+    <RootNamespace>Argus.Desktop</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The package ships WPF, WinForms and core assemblies; only two of them are used here. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3351.48" />
+  </ItemGroup>
+
+  <!--
+    WebView2Loader.dll is an architecture-specific native library and this SDK does not copy it into a
+    non-RID build output. Without it, `CoreWebView2Environment.CreateAsync` fails with a bare
+    E_NOTIMPL (0x80070032) that names neither the file nor the architecture — measured on Windows 10
+    x64. Copied explicitly so a `dotnet build` produces a runnable shell.
+  -->
+  <Target Name="CopyWebView2Loader" AfterTargets="Build">
+    <ItemGroup>
+      <WebView2Loader Include="$(NuGetPackageRoot)microsoft.web.webview2/1.0.3351.48/runtimes/$(NETCoreSdkPortableRuntimeIdentifier)/native/WebView2Loader.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WebView2Loader)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="'@(WebView2Loader)' != ''" />
+  </Target>
+
+</Project>

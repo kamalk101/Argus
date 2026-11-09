@@ -97,6 +97,16 @@ public static class Program
         var app = builder.Build();
         var actualPort = 0;
 
+        // The dashboard is served by the agent itself, so the UI and the API share an origin. That is
+        // what makes the bearer token and the Origin guard work without a proxy: a browser cannot
+        // read another origin's responses, and the agent refuses anything but its own Host and Origin.
+        var webRoot = ResolveWebRoot(options.WebRoot);
+        if (webRoot is not null)
+        {
+            var files = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(webRoot);
+            app.UseStaticFiles(new StaticFileOptions { FileProvider = files });
+        }
+
         app.Use(async (context, next) =>
         {
             if (!IsExpectedHost(context.Request, actualPort))
@@ -135,16 +145,71 @@ public static class Program
             await next().ConfigureAwait(false);
         });
 
-        app.MapGet("/", () => Results.Json(new
+        if (webRoot is null)
         {
-            name = "Argus agent",
-            version = AgentInfo.Version,
-            api = "/api/health",
-            note = "All /api routes except /api/health require Authorization: Bearer <token>.",
-        }, AgentJson.Options));
+            // Headless: `/` describes the API. With a dashboard the SPA fallback serves the app here.
+            app.MapGet("/", () => Results.Json(new
+            {
+                name = "Argus agent",
+                version = AgentInfo.Version,
+                api = "/api/health",
+                dashboard = (string?)null,
+                note = "All /api routes except /api/health require Authorization: Bearer <token>.",
+            }, AgentJson.Options));
+        }
 
-        app.MapGet("/api/health", () =>
+        // The pre-launch preview: what the operator is about to run, before anything runs. Signature is
+        // three-way for the same reason it is on every event — "could not read" is not "unsigned".
+        app.MapGet("/api/inspect", (HttpContext context) =>
         {
+            var path = context.Request.Query["path"].ToString();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return Results.BadRequest(new { error = "path is required" });
+            }
+
+            var full = path.Trim().Trim('"');
+            if (!Path.IsPathRooted(full))
+            {
+                return Results.BadRequest(new { error = "an absolute path is required" });
+            }
+
+            if (!File.Exists(full))
+            {
+                return Results.Json(new { exists = false, path = full }, AgentJson.Options);
+            }
+
+            var info = new FileInfo(full);
+            string? hash = null;
+            try
+            {
+                using var stream = File.OpenRead(full);
+                hash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                hash = null;
+            }
+
+            var signature = ImageSignature.Verify(full);
+            var executable = string.Equals(info.Extension, ".exe", StringComparison.OrdinalIgnoreCase);
+
+            return Results.Json(
+                new
+                {
+                    exists = true,
+                    path = info.FullName,
+                    name = info.Name,
+                    directory = info.DirectoryName,
+                    size = info.Length,
+                    sha256 = hash,
+                    signature = signature.ToString().ToLowerInvariant(),
+                    executable,
+                },
+                AgentJson.Options);
+        });
+
+        app.MapGet("/api/health", () =>        {
             var active = manager.Active;
             if (active is not null)
             {
@@ -187,6 +252,13 @@ public static class Program
             {
                 return Results.NotFound(new { error = exception.Message, path = exception.FileName });
             }
+            catch (Exception exception)
+            {
+                // A launch failure has to reach the dialog as a sentence: an unhandled 500 leaves the
+                // operator with a button that did nothing.
+                Console.Error.WriteLine("argus-agent: launch failed: " + exception);
+                return Results.Json(new { error = exception.Message }, AgentJson.Options, statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
 
         app.MapGet("/api/sessions/{id:guid}", (Guid id) =>
@@ -195,6 +267,19 @@ public static class Program
             return session is null
                 ? Results.NotFound(new { error = "session not found" })
                 : Results.Json(new { state = session.State(), record = session.Record() }, AgentJson.Options);
+        });
+
+        // The desktop shell starts the agent elevated and has to be able to end it. Stopping sessions
+        // first means a shutdown never leaves a monitored target orphaned mid-session.
+        app.MapPost("/api/shutdown", async () =>
+        {
+            await manager.StopAllAsync().ConfigureAwait(false);
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(250).ConfigureAwait(false);
+                await app.StopAsync().ConfigureAwait(false);
+            });
+            return Results.Json(new { stopping = true }, AgentJson.Options);
         });
 
         app.MapPost("/api/sessions/{id:guid}/stop", async (Guid id, HttpContext context) =>
@@ -379,6 +464,25 @@ public static class Program
                 : Results.Content(BuildHtmlReport(session), "text/html; charset=utf-8");
         });
 
+        if (webRoot is not null)
+        {
+            var index = Path.Combine(webRoot, "index.html");
+            // Client-side routes (`/threats`, `/timeline`) have no file on disk. Answer them with the
+            // shell so a reload works, and keep /api honest: an unknown API path is a 404, never HTML.
+            app.MapFallback(async context =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    await context.Response.WriteAsJsonAsync(new { error = "not found" }).ConfigureAwait(false);
+                    return;
+                }
+
+                context.Response.ContentType = "text/html; charset=utf-8";
+                await context.Response.SendFileAsync(index).ConfigureAwait(false);
+            });
+        }
+
         await app.StartAsync().ConfigureAwait(false);
 
         var address = app.Services.GetRequiredService<IServer>()
@@ -395,6 +499,18 @@ public static class Program
         actualPort = uri.Port;
         var api = $"http://127.0.0.1:{actualPort}";
         LiveSession? active = null;
+
+        // A killed run leaves its kernel ETW session registered, and the session table is a machine-wide
+        // limited resource (measured: six dead sessions made the next launch fail with 0x800705AA and the
+        // dashboard showed only "500"). Reclaim our own before anything tries to start.
+        var reclaimed = EtwCollector.ReclaimStaleSessions();
+        if (reclaimed.Count > 0)
+        {
+            Console.Error.WriteLine(
+                "argus-agent: reclaimed " + reclaimed.Count.ToString(CultureInfo.InvariantCulture)
+                + " stale ETW session(s) from an earlier run that was killed rather than stopped: "
+                + string.Join(", ", reclaimed));
+        }
 
         try
         {
@@ -446,6 +562,32 @@ public static class Program
         await app.WaitForShutdownAsync().ConfigureAwait(false);
         await manager.DisposeAsync().ConfigureAwait(false);
         return 0;
+    }
+
+    /// <summary>
+    /// Where the built dashboard lives. Explicit `--web-root` wins; otherwise the agent looks for
+    /// `web/dist` beside its binary and in the two directories above it (which is where a `dotnet run`
+    /// from the repo finds it). Null means headless: the API still works, nothing is served at `/`.
+    /// </summary>
+    private static string? ResolveWebRoot(string? configured)
+    {
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return Directory.Exists(configured) && File.Exists(Path.Combine(configured, "index.html"))
+                ? configured
+                : null;
+        }
+
+        var candidates = new List<string>();
+        var start = new DirectoryInfo(AppContext.BaseDirectory);
+        // Six levels: `src/Argus.Agent/bin/Debug/net8.0-windows` needs five to reach the repo root.
+        for (var depth = 0; depth < 6 && start is not null; depth++, start = start.Parent)
+        {
+            candidates.Add(Path.Combine(start.FullName, "web", "dist"));
+            candidates.Add(Path.Combine(start.FullName, "dist"));
+        }
+
+        return candidates.FirstOrDefault(candidate => File.Exists(Path.Combine(candidate, "index.html")));
     }
 
     /// <summary>

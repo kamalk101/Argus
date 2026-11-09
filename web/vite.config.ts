@@ -21,7 +21,7 @@ export default defineConfig({
         // The agent rejects any Origin that is not its own, and a browser always sends one on a POST
         // (the stream-ticket request). Rewrite it to the agent's origin for the dev proxy only; in the
         // packaged shell the dashboard is served by the agent, so it is same-origin and unaffected.
-        configure: (proxy: { on: (event: string, handler: (request: { setHeader: (name: string, value: string) => void }) => void) => void }) => {
+        configure: (proxy) => {
           proxy.on('proxyReq', (request) => request.setHeader('Origin', agent));
         },
       },

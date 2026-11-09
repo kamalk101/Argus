@@ -5,13 +5,24 @@ React 19 + Vite + TypeScript + Tailwind v4, virtualised tables, no UI kit.
 
 ## Run it against a live agent
 
-The agent binds loopback and requires a bearer token, so start it first (elevated, Windows):
+**Normally the agent serves the built dashboard itself** (`npm run build`, then the agent finds
+`web/dist`), so this is one origin and no dev server is involved:
 
 ```powershell
-dotnet run --project ..\src\Argus.Agent -- --target C:\Windows\System32\notepad.exe --port 5180
+dotnet run --project ..\src\Argus.Agent -- --port 0
+# prints {"port":…,"token":…}; also written to --ready-file
+# open http://127.0.0.1:<port>/?token=<token>
 ```
 
-It prints `{"port":…,"token":…}` (and writes the same JSON to `--ready-file`). Then:
+From there "Monitor an application" launches a target through the agent, so `--target` is optional.
+`src/Argus.Desktop` does exactly this and opens the result in a WebView2 window.
+
+For UI work, the dev server with HMR is still useful — it proxies `/api` to the agent, rewriting `Host`
+and `Origin` to the agent's own, because the agent rejects anything else by design:
+
+```powershell
+dotnet run --project ..\src\Argus.Agent -- --port 5180
+```
 
 ```bash
 ARGUS_AGENT=http://127.0.0.1:5180 npm run dev
@@ -40,20 +51,22 @@ npm run dev -- --open "/?fixtures=flagged"
 
 ```bash
 npm run build    # tsc --noEmit + vite build
-npm test         # 16 Playwright tests: eight routes, observability badges, evidence chain,
-                 # keyboard, 100k-row scroll (2 live tests skip without a token)
+npm test         # 22 Playwright tests: eight routes, observability badges, evidence chain,
+                 # keyboard, 100k-row scroll, launch dialog (5 live tests skip without a token)
 npm run shots    # writes .shots/*.png for review (no assertions)
 ```
 
 Playwright serves `dist/` with `vite preview`, so `npm run build` must be run before `npm test`.
 
-Live mode, against a running agent on port 5180 (the dashboard must go through the dev proxy, which
-rewrites `Host` and `Origin` to the agent's own — it rejects anything else by design):
+Live mode runs against the agent's own origin, so no proxy is needed — point it at the agent's port:
 
 ```bash
-ARGUS_AGENT=http://127.0.0.1:5180 npm run dev
-ARGUS_LIVE_TOKEN=<token> npm test -- e2e/live.spec.ts
+ARGUS_LIVE_URL=http://127.0.0.1:5180 ARGUS_LIVE_TOKEN=<token> npm test -- e2e/live.spec.ts
 ```
+
+The five live tests cover the shell, a client-side route surviving a reload, **launch → preview →
+session** (which stops any session left by a previous run first), the ticket-authenticated stream, and
+a non-existent path being refused before anything launches.
 
 ## Layout
 

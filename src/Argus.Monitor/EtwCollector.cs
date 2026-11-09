@@ -1,5 +1,6 @@
 namespace Argus.Monitor;
 
+using Argus.Core.Diagnostics;
 using Argus.Core.Events;
 using Argus.Core.Monitoring;
 using Microsoft.Diagnostics.Tracing;
@@ -42,6 +43,53 @@ public sealed class EtwCollector : IDisposable
     }
 
     public string? PumpError => _pumpError;
+
+    /// <summary>
+    /// Stops kernel sessions this agent created in an earlier run and never got to stop — a killed
+    /// process, a crashed run. Only <c>Argus-*</c> names are touched: another product's session and the
+    /// classic "NT Kernel Logger" are not ours to stop. Returns the names actually reclaimed so the
+    /// agent can say what it did instead of silently changing machine state.
+    /// </summary>
+    public static IReadOnlyList<string> ReclaimStaleSessions()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return Array.Empty<string>();
+        }
+
+        IReadOnlyList<string> names;
+        try
+        {
+            names = EtwStartFailure.Reclaimable(TraceEventSession.GetActiveSessionNames());
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        {
+            return Array.Empty<string>();
+        }
+
+        var stopped = new List<string>();
+        foreach (var name in names)
+        {
+            try
+            {
+                using var stale = TraceEventSession.GetActiveSession(name);
+                if (stale is null)
+                {
+                    continue;
+                }
+
+                stale.Stop();
+                stopped.Add(name);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+            {
+                // A session that cannot be stopped is not a reason to refuse to start: TryStart will
+                // report the real outcome, and that message now names this exact condition.
+            }
+        }
+
+        return stopped;
+    }
 
     public bool TryStart(out string? kernelError, out string? dnsError)
     {
@@ -135,9 +183,17 @@ public sealed class EtwCollector : IDisposable
             _stats.EtwStarted = true;
             return true;
         }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or UnauthorizedAccessException or IOException)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or UnauthorizedAccessException or IOException or System.Runtime.InteropServices.COMException or System.ComponentModel.Win32Exception)
         {
-            kernelError = exception.Message;
+            // Two ETW failures are worth naming: a full session table (usually this agent's own
+            // sessions, left behind by a killed run) and a missing elevation. Everything else keeps
+            // its own message.
+            var hresult = exception is System.Runtime.InteropServices.COMException com
+                ? com.HResult
+                : exception is System.ComponentModel.Win32Exception win32
+                    ? win32.NativeErrorCode is 0 ? null : unchecked((int)0x80070000) | (win32.NativeErrorCode & 0xFFFF)
+                    : (int?)null;
+            kernelError = EtwStartFailure.Explain(hresult, exception.Message);
             _stats.EtwError = kernelError;
             Dispose();
             return false;

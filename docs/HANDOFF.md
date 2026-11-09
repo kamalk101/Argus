@@ -994,7 +994,7 @@ children under `P-002` when the parent is an installer or IDE (measured and clos
 exemption now needs a signature as well as an installer-shaped name).
 
 Two things worth picking up from §12.11. First, the metadata race that hides signatures for
-short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.17.
+short-lived processes — a bounded retry was tried and **rejected on measurement**, see §12.18.
 Second, whether F-001 plus X-002 on a single write *should* reach Malicious: fixture 46 scores
 39.6 rather than 85 because both carry the file category and the scorer correctly refuses to treat
 them as independent. That is a grouping decision, not a rule change.
@@ -1182,11 +1182,79 @@ same-origin). Two smaller things it showed: the coverage banner was rendered twi
 - *SSE reconnect recovers state* — the server-side half is proven by the script above; the client
   refetches the snapshot and falls back to a widening retry delay.
 
-**What is deliberately not done in this slice:** `Argus.Desktop` (the WebView2 shell), the launch
-("Monitor an application") flow, report export and settings — the first two need Phase 5's elevation
-path, and the button is present but disabled with the reason in its tooltip rather than pretending.
+**What is deliberately not done in this slice:** report export and settings. The WebView2 shell and
+the launch flow are §12.17.
 
-### 12.17 A bounded metadata retry: measured, and not shipped
+### 12.17 The launch flow, dashboard hosting and the desktop shell
+
+The dashboard could list sessions but could not create one, and there was no way to start Argus other
+than a terminal. This slice closes both, and it is the first one where the **agent serves the UI**.
+
+**The agent serves the dashboard** (`--web-root`, auto-detected as `web/dist` in the repo layout). Same
+origin is the whole point: the bearer token and the host/origin guard then work without a proxy, and
+the two defects found in §12.16 (foreign `Origin`, unexpected `Host`) cannot occur at all. Client-side
+routes are served by a fallback that keeps `/api` honest — an unknown API path is still a JSON 404,
+never the HTML shell. *Measured:* `/` and `/threats` 200, `/api/nope` 404, `/api/health` 200.
+
+Two ordering facts were found by measuring rather than reading:
+
+- An endpoint registered **after** `app.StartAsync()` is not in the routing data source, so the
+  fallback silently never matched and `/threats` stayed 404 until the mapping moved above the start.
+- `--target` is now optional: with no target the agent waits for the dashboard to start a session,
+  which is the product's actual shape (launch Argus, then choose an application).
+
+**Launch flow.** "Monitor an application" is enabled and opens a dialog: path, optional arguments,
+**Check this file**, then Start. The preview is the agent's answer, not the browser's guess —
+`GET /api/inspect?path=` returns size, SHA-256 and a three-way signature (`valid` / `invalid` /
+`unknown`, with "unknown means the check could not run — never read it as *unsigned*" in the dialog).
+Launch stays disabled until the preview says the file exists and is an `.exe`. In fixture mode the
+dialog says there is no agent instead of pretending.
+
+**`Argus.Desktop`** is a WinForms + WebView2 window (`argus.exe`, normal integrity): it starts the
+agent through its own `--elevate` path, reads the ready JSON, and navigates to the agent's origin with
+the token. Closing the window calls a new `POST /api/shutdown`, which stops sessions before stopping
+the server — a killed agent is what leaves a kernel ETW session behind.
+
+Four defects were found by running it, and three of them were invisible from the code:
+
+1. **`ReadToEnd` on the launcher's stdout deadlocked the window.** The elevated child inherits the
+   pipe, so the stream never closes while the agent lives; the window sat on "Starting the elevated
+   monitor…" with a healthy agent listening. Now one line is read, with a 90 s bound.
+2. **`async void` swallowed the failure.** The window showed its first status message forever with no
+   indication why. All exceptions are now caught, written to `%TEMP%rgus-desktop.log` and shown.
+3. **The `WebView2Loader.dll` native file was not in the build output**, so environment creation failed
+   with a bare `E_NOTIMPL (0x80070032)` that names neither the file nor the architecture. Copied
+   explicitly by the project.
+4. **The WebView2 runtime genuinely is not installed on this VM.** Edge 92 ships
+   `msedgewebview2.exe`, so an executable check says "installed", but the Evergreen registration
+   (`EdgeUpdate\Clients\{F3017226-…}`) is absent and the SDK cannot use it. The shell now checks the
+   registration, and says exactly that — including the still-working dashboard URL — instead of a stack
+   trace. **Stated plainly: WebView2 rendering is not verified on this machine**, because the runtime is
+   not installable without changing the machine; everything the shell does *around* the browser is
+   verified (agent start, token, URL, live suite below).
+
+**A machine-wide failure the launch flow exposed.** Repeatedly killing agents left six
+`Argus-*` kernel ETW sessions registered, and the next launch failed with `0x800705AA` "Insufficient
+system resources" — which reads as memory pressure and is nothing of the kind.
+
+- `EtwCollector.ReclaimStaleSessions()` stops `Argus-*` sessions at startup and says which ones.
+  *Measured:* kill an agent mid-session → 1 leaked session → restart → `reclaimed 1 stale ETW session(s)
+  … Argus-ac3105…`, 0 left.
+- `EtwStartFailure.Explain` turns the two named HRESULTs into sentences (session limit with the
+  `logman` commands; access denied with the elevation fix) and keeps any other message verbatim.
+  6 unit tests in `Argus.Core.Tests`.
+- `POST /api/sessions` now returns the failure as a sentence instead of a bare 500.
+
+**Verified live** (agent started *by the desktop shell*, port and token taken from its own log):
+
+| Check | Result |
+| --- | --- |
+| `/` and `/threats` served by the agent | 200 / 200, `/api/nope` 404 |
+| Live Playwright suite (5 tests) | **5/5 pass** — shell, reload, launch→preview→live, stream ticket, refusal |
+| Fixture suite | **17 pass, 5 skipped** (live specs) |
+| `verify.sh` | **254 tests** (102 core, 141 analysis, 11 storage), **54/54** scenarios, selftest pass |
+
+### 12.18 A bounded metadata retry: measured, and not shipped
 
 The suggestion at the end of §12.11 was to retry the process-metadata lookup so short-lived processes are
 enriched more often. It was implemented and measured before being documented as an improvement, and it

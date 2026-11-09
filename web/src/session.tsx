@@ -25,6 +25,11 @@ const SessionContext = createContext<SessionContextValue>({
  */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const state = useAsync(listSessions, []);
+
+  // Refetching happens where the change happens: the launch dialog calls `reload` once the agent has
+  // answered. A blanket reload on every navigation was tried and reverted — it re-rendered screens
+  // mid-interaction (measured: the Ctrl+K focus moved to a freshly mounted input) for no new data.
+
   const sessions = state.data;
   const newest = sessions && sessions.length > 0 ? [...sessions].sort((a, b) => b.startedUtc.localeCompare(a.startedUtc))[0] : null;
 

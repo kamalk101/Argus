@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { LaunchDialog } from '../components/LaunchDialog';
 import { useSession } from '../session';
 import { Counter, Panel, StateNote, VerdictPill } from '../components/ui';
 import { clock, duration, elide, number, stamp } from '../lib/format';
@@ -6,15 +8,27 @@ import type { SessionState } from '../api/types';
 
 export function SessionsScreen() {
   const { sessions, error, loading, reload } = useSession();
+  const [launching, setLaunching] = useState(false);
 
   if (loading) return <StateNote kind="loading" />;
   if (error) return <StateNote kind="error" message={`Could not list sessions: ${error}`} onRetry={reload} />;
   if (!sessions || sessions.length === 0) {
     return (
-      <StateNote
-        kind="empty"
-        message="No sessions yet. Start one with “Monitor an application”, or record a session with scripts/corpus.ps1 and replay it."
-      />
+      <div className="space-y-3 p-4">
+        <h1 className="text-sm font-semibold uppercase tracking-wider text-ink-100">Sessions</h1>
+        <button
+          type="button"
+          onClick={() => setLaunching(true)}
+          className="rounded border border-benign/40 bg-benign/10 px-3 py-1.5 text-[12px] text-benign hover:bg-benign/20"
+        >
+          Monitor an application
+        </button>
+        <StateNote
+          kind="empty"
+          message="No sessions yet. Start one above, or record a session with scripts/corpus.ps1 and replay it."
+        />
+        {launching && <LaunchDialog onClose={() => setLaunching(false)} />}
+      </div>
     );
   }
 
@@ -36,9 +50,8 @@ export function SessionsScreen() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            disabled
-            title="Launching a target needs the elevated agent on Windows (Phase 5 wires this button)."
-            className="rounded border border-ink-600 px-3 py-1.5 text-[12px] text-ink-400 disabled:cursor-not-allowed"
+            onClick={() => setLaunching(true)}
+            className="rounded border border-ink-600 px-3 py-1.5 text-[12px] text-ink-200 hover:bg-ink-850"
           >
             Monitor an application
           </button>
@@ -54,6 +67,8 @@ export function SessionsScreen() {
         <Counter label="collection gaps" value={number(totals.gaps)} tone={totals.gaps > 0 ? 'text-suspicious' : undefined} />
         <Counter label="agent pid (newest)" value={number(newest.rootPid)} />
       </div>
+
+      {launching && <LaunchDialog onClose={() => setLaunching(false)} />}
 
       <div className="grid gap-3 lg:grid-cols-2">
         {sessions.map((session) => (
