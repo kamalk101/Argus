@@ -1,0 +1,1098 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argus — project report and viva guide</title>
+<style>
+  :root {
+    --bg: #0f131a; --panel: #161c26; --panel2: #1b2230; --line: #26303f;
+    --text: #e6edf3; --muted: #93a0b4; --dim: #6b7787;
+    --cyan: #43c6e8; --green: #3ec4a0; --amber: #f5a524; --red: #e5484d; --violet: #a78bfa;
+    --mono: "Cascadia Mono", "Consolas", "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); line-height: 1.55;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 15px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 96px; }
+  h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.4px; }
+  h2 {
+    font-size: 20px; margin: 44px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+    letter-spacing: -0.2px;
+  }
+  h3 { font-size: 15.5px; margin: 26px 0 8px; color: var(--cyan); }
+  h4 { font-size: 13.5px; margin: 18px 0 6px; color: var(--violet); text-transform: uppercase; letter-spacing: 0.6px; }
+  p, li { color: #d3dae4; }
+  .lede { color: var(--muted); font-size: 15px; margin: 6px 0 0; }
+  code, .mono { font-family: var(--mono); font-size: 12.5px; }
+  code { background: #10161f; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: #cfe3f5; }
+  pre {
+    background: #0c1118; border: 1px solid var(--line); border-left: 3px solid var(--cyan);
+    border-radius: 6px; padding: 12px 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+    font-family: var(--mono); color: #cbd6e4;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 18px; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); font-weight: 600; color: #c8d3e2; }
+  tbody tr:nth-child(odd) { background: #141a23; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+  .tag {
+    display: inline-block; border: 1px solid currentColor; border-radius: 10px;
+    padding: 0 7px; font-size: 11px; line-height: 17px; vertical-align: middle;
+  }
+  .g { color: var(--green); } .a { color: var(--amber); } .r { color: var(--red); }
+  .c { color: var(--cyan); } .v { color: var(--violet); } .d { color: var(--dim); }
+  .toc { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; margin: 22px 0 8px; }
+  .toc ol { margin: 6px 0 0; padding-left: 22px; columns: 2; column-gap: 28px; }
+  .toc a { color: #cfe3f5; text-decoration: none; }
+  .toc a:hover { color: var(--cyan); text-decoration: underline; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 12px 0; }
+  .card.hi { border-left: 3px solid var(--amber); }
+  .card.ok { border-left: 3px solid var(--green); }
+  .card.no { border-left: 3px solid var(--red); }
+  .qa { border-left: 3px solid var(--cyan); background: var(--panel); border-radius: 0 6px 6px 0; padding: 10px 14px; margin: 10px 0; }
+  .qa .q { font-weight: 600; color: #eaf2fa; }
+  .qa .say { margin-top: 6px; color: #cfd8e3; }
+  .qa .say::before { content: "say: "; color: var(--green); font-weight: 600; font-size: 12px; }
+  .qa .why { margin-top: 5px; font-size: 12.5px; color: var(--dim); font-style: italic; }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0; font-size: 12px; }
+  .flow span { background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; }
+  .flow i { color: var(--dim); font-style: normal; }
+  hr { border: none; border-top: 1px solid var(--line); margin: 34px 0; }
+  .kpi { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 6px; }
+  .kpi div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 9px 13px; }
+  .kpi b { display: block; font-size: 19px; color: var(--cyan); }
+  .kpi span { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  footer { margin-top: 50px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Argus</h1>
+<p class="lede">A behavioural monitoring agent for Windows, with evidence that explains itself.
+Project report, code walkthrough and viva preparation.</p>
+
+<div class="kpi">
+  <div><b>15,026</b><span>lines of C#</span></div>
+  <div><b>8</b><span>projects</span></div>
+  <div><b>23</b><span>detection rules</span></div>
+  <div><b>254</b><span>.NET tests</span></div>
+  <div><b>54</b><span>scenarios</span></div>
+  <div><b>28</b><span>Playwright tests</span></div>
+  <div><b>.NET 8</b><span>+ React 19</span></div>
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#s1">What it is, in one page</a></li>
+    <li><a href="#s2">Why it exists (the problem)</a></li>
+    <li><a href="#s3">Architecture: how the pieces fit</a></li>
+    <li><a href="#s4">The data contract (BehaviorEvent)</a></li>
+    <li><a href="#s5">The code map: every project and file</a></li>
+    <li><a href="#s6">Trace one event end-to-end</a></li>
+    <li><a href="#s7">Scope tracking: what gets watched</a></li>
+    <li><a href="#s8">The 23 rules, explained</a></li>
+    <li><a href="#s9">The scoring model (with maths)</a></li>
+    <li><a href="#s10">Honesty rules: observability, gaps, signatures</a></li>
+    <li><a href="#s11">Sensors: ETW, polling, and what they cannot see</a></li>
+    <li><a href="#s12">The dashboard and the desktop shell</a></li>
+    <li><a href="#s13">The report export and Settings</a></li>
+    <li><a href="#s14">Testing: how I know it works</a></li>
+    <li><a href="#s15">Measured bugs and how I found them</a></li>
+    <li><a href="#s16">Limitations — say these before he asks</a></li>
+    <li><a href="#s17">Viva questions and answers</a></li>
+    <li><a href="#s18">Demo script and numbers to quote</a></li>
+    <li><a href="#s19">Glossary</a></li>
+  </ol>
+</div>
+
+<h2 id="s1">1. What it is, in one page</h2>
+
+<p><strong>Argus is a Windows desktop application that watches what a single program actually does
+while it runs, and tells you how suspicious that behaviour is — with the reason, and with what it could
+not see.</strong></p>
+
+<p>You start Argus, choose an executable (say <code>notepad.exe</code> or a file you downloaded), and
+Argus captures the operating system's own event stream for that process <em>and every process it
+creates</em>: process starts, file writes, registry writes, network connections, DNS lookups. Those raw
+events are normalised, attributed to the program's process tree, fed to 23 named detection rules, merged
+into detections, and turned into one 0–100 risk score. A browser dashboard shows it live, and you can
+export a self-contained HTML report.</p>
+
+<p>The idea is <strong>dynamic analysis</strong>: you do not read the binary's bytes (that is static
+analysis) — you observe what it does. And the distinguishing engineering choice of this project is
+that <em>every claim carries its own limits</em>:</p>
+
+<div class="card ok">
+  <p style="margin:0"><strong>Three design commitments that shape every file in the repo</strong></p>
+  <ol style="margin:8px 0 0">
+    <li><strong>Every detection explains itself.</strong> A finding is not a title, it is a
+      <code>RuleFinding</code> with a <code>Reason</code> ("reg.exe wrote an autostart value under
+      CurrentVersion\Run, which Windows runs at sign-in") and a <code>Counterfactual</code> ("would not
+      fire for a read or a delete, or for a key Windows does not execute"). If the rule cannot explain
+      itself, it does not ship.</li>
+    <li><strong>Evidence is labelled by how directly it was seen.</strong> Every event carries
+      <code>Observability</code> = Direct / Partial / Inferred / Aggregated, and the UI renders it. Reading
+      and writing evidence are never blurred together.</li>
+    <li><strong>Absence of evidence is reported as such.</strong> If the sensor dropped events, the
+      session says "incomplete" with the reason. "No detections" is phrased as "no significant observed
+      indicators", never "safe".</li>
+  </ol>
+</div>
+
+<h2 id="s2">2. Why it exists (the problem)</h2>
+
+<p>Antivirus asks "is this file known-bad?" It fails against anything new. The professional answer is to
+run unknown software in a sandbox and watch it. That is what tools like Cuckoo or Process Monitor do,
+and each is awkward: Procmon gives you thousands of raw events with no judgement at all; a full sandbox
+needs a second machine and heavy tooling.</p>
+
+<p>Argus takes a middle position: <strong>one machine, one program, real operating-system telemetry, and a
+judgement that is explainable line by line.</strong> It is deliberately <em>not</em> a sandbox (it does not
+contain the program), <em>not</em> an antivirus (no signatures, no blocking), and <em>not</em> a service
+(it only sees what happens while a session is open). Those three negatives are stated in the docs and are
+better said in the viva than discovered by the examiner.</p>
+
+<table>
+  <thead><tr><th>Approach</th><th>What you get</th><th>What it costs</th></tr></thead>
+  <tbody>
+    <tr><td>Static analysis / antivirus</td><td>Fast, works on files at rest</td><td>Blind to what the program actually does; new malware is invisible</td></tr>
+    <tr><td>Full sandbox (Cuckoo)</td><td>Containment, network simulation</td><td>Second machine, heavy setup, hard to do live</td></tr>
+    <tr><td>Procmon / raw ETW</td><td>Complete truth, no interpretation</td><td>Too much data; no judgement, no explanation</td></tr>
+    <tr><td><strong>Argus</strong></td><td>Live behavioural judgement with reasons, counterfactuals and stated blind spots</td><td>No containment; single session; sees only the monitored tree</td></tr>
+  </tbody>
+</table>
+
+<h2 id="s3">3. Architecture: how the pieces fit</h2>
+
+<div class="flow">
+  <span>Target .exe</span><i>→</i>
+  <span>ETW kernel session<br><span class="d small">+ polling</span></span><i>→</i>
+  <span>Raw events</span><i>→</i>
+  <span>Normalizer<br><span class="d small">BehaviorEvent</span></span><i>→</i>
+  <span>Scope tracker<br><span class="d small">in / out</span></span><i>→</i>
+  <span>Storage<br><span class="d small">SQLite + JSONL</span></span><i>→</i>
+  <span>23 rules<br><span class="d small">RuleFinding</span></span><i>→</i>
+  <span>Aggregator<br><span class="d small">one per rule+pid</span></span><i>→</i>
+  <span>Scorer<br><span class="d small">0–100</span></span><i>→</i>
+  <span>SSE stream</span><i>→</i>
+  <span>Dashboard / report</span>
+</div>
+
+<p>The shape is a <strong>pipeline with one narrow data contract in the middle</strong>. Everything upstream
+of <code>BehaviorEvent</code> is Windows-specific and untestable off Windows; everything downstream is pure
+logic and fully unit-testable on any machine. That split is why the project can claim 254 tests on a
+machine where ETW only exists on one OS: the Windows part is thin (collection + normalisation), the
+reasoning part is thick and testable.</p>
+
+<table>
+  <thead><tr><th>Project</th><th>Role</th><th>Depends on</th><th>Windows-only?</th></tr></thead>
+  <tbody>
+    <tr><td><code>Argus.Core</code></td><td>Event contract, scope tracker, path keys, scoring, read sampling, volume governor, ETW start-failure diagnosis</td><td>nothing</td><td>No (pure logic; the ETW bits are just helpers)</td></tr>
+    <tr><td><code>Argus.Monitor</code></td><td>The sensor: ETW session, kernel provider mapping, process/TCP polling, Authenticode signature check, UAC relaunch</td><td>Core</td><td><strong>Yes</strong></td></tr>
+    <tr><td><code>Argus.Analysis</code></td><td>The reasoning: 23 rules, aggregator, confidence model, pipeline, coverage assessment</td><td>Core</td><td>No</td></tr>
+    <tr><td><code>Argus.Storage</code></td><td>SQLite persistence (events, detections, processes, scores) with FTS search, plus the raw JSONL recorder</td><td>Core</td><td>No</td></tr>
+    <tr><td><code>Argus.Agent</code></td><td>HTTP host: launches the target, runs the pipeline, serves <code>/api/...</code>, SSE stream, reports, and the built dashboard</td><td>all of the above</td><td>Yes (hosts the sensor)</td></tr>
+    <tr><td><code>Argus.Cli</code></td><td>Replay CLI: run fixtures, print the catalogue (<code>argus rules</code>)</td><td>Core, Analysis, Storage</td><td>No</td></tr>
+    <tr><td><code>Argus.Simulator</code></td><td>Generates synthetic event streams (behaviour simulation and load tests)</td><td>Core</td><td>No</td></tr>
+    <tr><td><code>Argus.Desktop</code></td><td>WinForms + WebView2 shell that starts the elevated agent and shows the dashboard</td><td>—</td><td>Yes</td></tr>
+    <tr><td><code>web/</code></td><td>React 19 + TypeScript + Tailwind dashboard, 9 routes</td><td>the agent's HTTP API</td><td>No</td></tr>
+  </tbody>
+</table>
+
+<p class="small muted">Dependency direction is strictly one-way: Core knows nobody; only the Agent and
+Desktop know everyone. That is why a rule cannot accidentally call the sensor.</p>
+
+<h2 id="s4">4. The data contract (BehaviorEvent)</h2>
+
+<p><code>src/Argus.Core/Events/BehaviorEvent.cs</code> is the most important file in the project. Every
+sensor output becomes one of these before anything else looks at it. You should be able to open it and
+point at a field.</p>
+
+<table>
+  <thead><tr><th>Field</th><th>Why it exists</th></tr></thead>
+  <tbody>
+    <tr><td><code>Seq</code>, <code>SessionId</code>, <code>TimestampUtc</code></td><td>Ordering and identity. <code>Seq</code> is the evidence reference: a detection stores the sequence numbers it rests on.</td></tr>
+    <tr><td><code>Kind</code> (<code>EventKind</code>)</td><td>What happened: <code>ProcessStart</code>, <code>FileWrite</code>, <code>RegistrySetValue</code>, <code>NetConnect</code>, <code>NetFlow</code>, <code>DnsQuery</code>, …</td></tr>
+    <tr><td><code>Category</code></td><td>Coarse channel: Process / File / Registry / Network / Dns / Meta. The scorer's corroboration uses this.</td></tr>
+    <tr><td><code>Pid</code>, <code>ParentPid</code>, <code>ImageName</code>, <code>ImagePath</code>, <code>CommandLine</code></td><td>Attribution: which program, started by whom, with what arguments. Most rules need <code>ImagePath</code> or <code>CommandLine</code>.</td></tr>
+    <tr><td><code>Target</code>, <code>PathKey</code>, <code>PreviousPath</code></td><td>The object acted on (file path, registry value, remote address). <code>PathKey</code> is a canonicalised, case-folded path so two spellings of one file compare equal.</td></tr>
+    <tr><td><code>RemoteIp</code>, <code>RemotePort</code>, <code>Protocol</code>, <code>HostName</code>, <code>DnsStatus</code></td><td>Network and DNS facts, including whether a name resolved, did not exist, or never got an answer.</td></tr>
+    <tr><td><code>BytesOut</code>, <code>BytesIn</code></td><td>Volume. <code>NetConnect</code> records never carried byte counts — a separate <code>NetFlow</code> record does.</td></tr>
+    <tr><td><code>FileEffect</code></td><td>Create vs open. Without it, "file opened" from a <code>System32</code> binary looked like a write.</td></tr>
+    <tr><td><code>Signature</code> (<code>SignatureStatus</code>)</td><td>Valid / Invalid / Unknown — three-way on purpose. <code>Unknown</code> is never read as "unsigned".</td></tr>
+    <tr><td><code>Observability</code></td><td>Direct / Partial / Inferred / Aggregated. Requirement 6 of the project: never blur observed and inferred.</td></tr>
+    <tr><td><code>Confidence</code>, <code>Source</code> (<code>EventSourceKind</code>)</td><td>How sure, and from which mechanism (Etw / Polling / Peb / Wmi / Simulated / Replay). A replay must be distinguishable from a live capture.</td></tr>
+    <tr><td><code>Scope</code> (<code>ProcessScopeState</code>)</td><td>Root / Confirmed / Unconfirmed / Excluded / OutOfScope — set by the scope tracker, used by rules and by the UI filter.</td></tr>
+  </tbody>
+</table>
+
+<p class="small muted">A note on why <code>Detail</code> (a free-text blob) is used sparingly: two rules
+were initially blocked because the fact they needed (the DNS status) lived only inside
+<code>Detail</code>. The fix was to promote it to a first-class field (<code>DnsStatus</code> with three
+values). That is a general principle in this repo: <em>anything a rule must reason about becomes a typed
+field.</em></p>
+<h2 id="s5">5. The code map: every project and file</h2>
+
+<p>Open this repo cold and you need to know where things live. This is the map, by area, with the
+one-line answer for each file. If the examiner points at a file, this is your prompt.</p>
+
+<h3>Core — <code>src/Argus.Core/</code></h3>
+<table>
+  <thead><tr><th>File</th><th>What it is / one-line answer</th></tr></thead>
+  <tbody>
+    <tr><td><code>Events/BehaviorEvent.cs</code></td><td>The single event contract every sensor output becomes (§4).</td></tr>
+    <tr><td><code>Events/EventKind.cs</code>, <code>EventCategory.cs</code></td><td>What happened, and which coarse channel it belongs to.</td></tr>
+    <tr><td><code>Events/Observability.cs</code></td><td>The Direct/Partial/Inferred/Aggregated honesty label.</td></tr>
+    <tr><td><code>Events/SignatureStatus.cs</code></td><td>Valid/Invalid/Unknown — three-way so "could not read" ≠ "unsigned".</td></tr>
+    <tr><td><code>Events/FileEffect.cs</code></td><td>Create vs open vs rename disposition, so an open is not reported as a write.</td></tr>
+    <tr><td><code>Events/DnsStatus.cs</code></td><td>Success / NameDoesNotExist / NoAnswer — a timeout says something different from a dead name.</td></tr>
+    <tr><td><code>Events/EventNormalizer.cs</code></td><td>Makes raw records well-formed: fills missing attribution, clamps timestamps, computes a PathKey.</td></tr>
+    <tr><td><code>Processes/ProcessScopeTracker.cs</code></td><td>Decides in/out of the monitored tree: root, children by parent link, or attributed by location (§7).</td></tr>
+    <tr><td><code>Processes/ProcessTable.cs</code></td><td>Holds process records for the session, used by scope and by the processes screen.</td></tr>
+    <tr><td><code>Paths/PathKey.cs</code></td><td>Canonicalise and compare file paths case-insensitively, plus directory-name and is-under helpers. The reason two spellings of one path match.</td></tr>
+    <tr><td><code>Paths/SensitivePathCatalog.cs</code></td><td>Known credential-store locations (browser login DBs, SSH keys, wallets) for F-008.</td></tr>
+    <tr><td><code>Risk/RiskScorer.cs</code>, <code>RiskOptions.cs</code>, <code>ConfidenceModel.cs</code></td><td>The 0–100 score: severity × confidence × time-decay, corroboration bonus, band decision (§9).</td></tr>
+    <tr><td><code>Monitoring/EtwEventMapper.cs</code>, <code>EtwRecord.cs</code></td><td>Maps raw ETW manifest records to behaviour events — the Windows-specific adapter that keeps the rest of the code clean.</td></tr>
+    <tr><td><code>Monitoring/ReadSampler.cs</code></td><td>Samples file/network reads under volume pressure, and says so.</td></tr>
+    <tr><td><code>Monitoring/VolumeGovernor.cs</code></td><td>Detects event-rate overload and throttles, so a clean session is not marked "incomplete" by machine-wide noise.</td></tr>
+    <tr><td><code>Network/IpAddressClassifier.cs</code></td><td>Private vs public ranges, and loopback — the "bare public address" signal for N-004.</td></tr>
+    <tr><td><code>Diagnostics/EtwStartFailure.cs</code></td><td>Turns cryptic ETW start HRESULTs into sentences, and reclaims stale <code>Argus-*</code> ETW sessions.</td></tr>
+    <tr><td><code>Sessions/RiskBand.cs</code></td><td>Benign / Suspicious / Malicious band enum.</td></tr>
+  </tbody>
+</table>
+
+<h3>Monitor (the sensor) — <code>src/Argus.Monitor/</code></h3>
+<table>
+  <thead><tr><th>File</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><code>EtwCollector.cs</code></td><td>Opens the kernel ETW session, subscribes, and pumps events; reclaims stale sessions at start.</td></tr>
+    <tr><td><code>MonitorEventSource.cs</code></td><td>The observable event source the pipeline subscribes to.</td></tr>
+    <tr><td><code>ImageSignature.cs</code></td><td>Authenticode + catalog verification, building the chain explicitly (see §10 for the two wrong ways).</td></tr>
+    <tr><td><code>ProcessPollingCollector.cs</code></td><td>Periodic process snapshot used to back-fill metadata for short-lived processes.</td></tr>
+    <tr><td><code>TcpPollingCollector.cs</code>, <code>TcpTableReader.cs</code></td><td>Reads the TCP table so connections can be attributed to a process when the kernel event alone cannot.</td></tr>
+    <tr><td><code>ProcessSnapshot.cs</code>, <code>WindowsProcessMetadata.cs</code>, <code>NativeMethods.cs</code>, <code>VolumeMap.cs</code></td><td>Win32 plumbing: OpenProcess, PEB reads, volume/DRIVE mappings, P/Invoke declarations.</td></tr>
+    <tr><td><code>MonitorOptions.cs</code></td><td>Flags for the sensor (sampling, polling intervals).</td></tr>
+  </tbody>
+</table>
+
+<h3>Analysis (the reasoning) — <code>src/Argus.Analysis/</code></h3>
+<table>
+  <thead><tr><th>File / dir</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><code>Rules/RuleContracts.cs</code></td><td><code>RuleMetadata</code>, <code>RuleFinding</code> (Reason + Counterfactual + GroupPid), <code>RuleContext</code>, <code>IEventRule</code> — the contract every rule implements.</td></tr>
+    <tr><td><code>Rules/RuleCatalog.cs</code></td><td>Registers all 23 rules; also emits the <code>docs/RULES.md</code> table that the verify gate checks.</td></tr>
+    <tr><td><code>Rules/RuleSettings.cs</code></td><td>The tunable numbers (thresholds, windows) as data; loading rejects unknown keys so a typo fails loudly.</td></tr>
+    <tr><td><code>Rules/*.cs</code> (23 files)</td><td>One file per rule. The naming scheme is <code>F-</code> file, <code>N-</code> network, <code>P-</code> process, <code>X-</code> correlated (§8).</td></tr>
+    <tr><td><code>Detection/DetectionAggregator.cs</code></td><td>Collapses repeated hits into one card per (rule, process) in a merge window, and escalates when new evidence channels join.</td></tr>
+    <tr><td><code>Detection/DetectionState.cs</code></td><td>A detection: key, title, severity, confidence, ScopePid, evidence sequence numbers, status, reason, counterfactual.</td></tr>
+    <tr><td><code>Pipeline/SessionPipeline.cs</code></td><td>Wires normalise → scope → rules → aggregate → score per event; the place a new rule plugs in.</td></tr>
+    <tr><td><code>Pipeline/CoverageAssessment.cs</code></td><td>Decides "complete vs incomplete" from loss counters and gaps, with a human statement.</td></tr>
+  </tbody>
+</table>
+
+<h3>Storage — <code>src/Argus.Storage/</code></h3>
+<table>
+  <thead><tr><th>File</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><code>SessionDatabase.cs</code></td><td>Opens the SQLite DB for one session and runs the schema (migrations included).</td></tr>
+    <tr><td><code>EventRepository.cs</code>, <code>DetectionRepository.cs</code>, <code>ProcessRepository.cs</code>, <code>ScoreRepository.cs</code></td><td>One table per concern; FTS virtual table powers search.</td></tr>
+    <tr><td><code>SessionRecorder.cs</code></td><td>Appends every raw event to a JSONL file — the replay corpus and the evidence of record.</td></tr>
+    <tr><td><code>Records.cs</code></td><td>The stored DTOs (<code>StoredDetection</code>, <code>ProcessRecord</code>, …).</td></tr>
+  </tbody>
+</table>
+
+<h3>Agent, CLI, Desktop — the executables</h3>
+<table>
+  <thead><tr><th>File</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/Argus.Agent/Program.cs</code></td><td>The HTTP host: every <code>/api/...</code> route, the SSE hub, the SPA fallback, auth guard, and the launcher ready-file.</td></tr>
+    <tr><td><code>src/Argus.Agent/LiveSession.cs</code></td><td>One monitored run: owns the pipeline, storage, counters, and answers for the API.</td></tr>
+    <tr><td><code>src/Argus.Agent/SessionManager.cs</code></td><td>Tracks live sessions, loads rule settings at startup, starts/stops sessions.</td></tr>
+    <tr><td><code>src/Argus.Agent/SseHub.cs</code>, <code>StreamTickets.cs</code></td><td>Live event push. Tickets are single-use, 30-second, so the token never sits in a URL.</td></tr>
+    <tr><td><code>src/Argus.Agent/SessionReport.cs</code>, <code>ObservabilityTable.cs</code></td><td>One snapshot rendered two ways (HTML + JSON) — the export and the Settings observability table come from the same data.</td></tr>
+    <tr><td><code>src/Argus.Agent/AgentJson.cs</code>, <code>AgentOptions.cs</code></td><td>JSON options and the command-line parsing.</td></tr>
+    <tr><td><code>src/Argus.Cli/Program.cs</code></td><td>Replay runner and catalogue printer (<code>argus rules</code>, <code>argus replay</code>).</td></tr>
+    <tr><td><code>src/Argus.Desktop/*</code></td><td>WinForms window: <code>AgentProcess</code> starts the elevated agent and reads the ready line; <code>RuntimeLocator</code> finds WebView2 per-user or per-machine; <code>MainForm</code> swaps the browser in and shows the dashboard.</td></tr>
+    <tr><td><code>web/src/</code></td><td>The dashboard: <code>api/client.ts</code> is the only data door; <code>session.tsx</code> holds one loaded session for the whole shell; <code>screens/</code> = 8 data routes + Settings.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="s6">6. Trace one event end-to-end</h2>
+
+<p>This is the single most useful thing to be able to narrate. Pick "<code>reg add ...CurrentVersion\Run</code>"
+and tell the story:</p>
+
+<ol>
+  <li><strong>The operator launches</strong> the target from the dashboard ("Monitor an application"). The agent
+    checks the file exists and is an executable, then <code>SessionManager.StartAsync</code> opens a SQLite
+    database and a JSONL recorder, and starts ETW <em>before</em> the target process is created (late root
+    attach), so the first ~150 ms is not lost.</li>
+  <li><strong>The kernel fires events.</strong> The target starts <code>reg.exe</code> — Windows raises a
+    <code>ProcessStart</code> record. When <code>reg.exe</code> writes the value, the kernel registry provider
+    raises a registry write record carrying the kernel object for the key.</li>
+  <li><strong><code>EtwEventMapper</code> normalises</strong> the raw record into a <code>BehaviorEvent</code>:
+    kind, pid, target, timestamps, <code>Observability</code>. For the registry write, the key name comes from
+    the earlier open record, joined through the kernel object pointer — hence <code>Inferred</code>.</li>
+  <li><strong>The scope tracker decides</strong> whether the event belongs to the monitored tree
+    (<code>Observe(event)</code> → Root/Confirmed/Unconfirmed/Excluded). Out-of-scope events are counted but
+    not reasoned about.</li>
+  <li><strong>The event is stored</strong> (SQLite row + JSONL line) so the report can later cite its exact
+    evidence by sequence number.</li>
+  <li><strong>The pipeline runs the rules.</strong> Each <code>IEventRule.Evaluate(context)</code> returns zero
+    or more <code>RuleFinding</code>. <code>AutostartKeyRule</code> matches a value write under
+    <code>...\CurrentVersion\Run</code> and returns a finding with its reason and counterfactual.</li>
+  <li><strong>The aggregator merges</strong> it into a <code>DetectionState</code> keyed by rule+process.
+    Repeated hits raise the count and confidence; a second evidence channel escalates the card.</li>
+  <li><strong>The scorer recomputes</strong> 0–100 from severity, confidence, age-decay and corroboration and
+    picks the band. An SSE <code>state</code> frame reaches the dashboard and the Live screen re-renders.</li>
+  <li><strong>At the end</strong> the report is rendered from one <code>SessionReport.Snapshot</code>: verdict,
+    score, counts, detections with their evidence, gaps, observability table and config digest — as HTML and
+    as JSON.</li>
+</ol>
+
+<pre>
+kernel ETW --> EtwEventMapper --> BehaviorEvent --> scope? --> store (SQLite + JSONL)
+                                                 |
+                                                 v
+                                23 rules -> RuleFinding -> aggregator -> DetectionState
+                                                 |
+                                                 v
+                                 RiskScorer (0-100) -> band -> SSE -> dashboard / report
+</pre>
+
+<h2 id="s7">7. Scope tracking: what gets watched</h2>
+
+<p>Argus does not report the whole machine; it watches one process tree. The
+<code>ProcessScopeTracker</code> answers "is this event part of the story?" as a <em>state machine over
+parent links</em>, not a list of PIDs.</p>
+
+<ul>
+  <li><strong>Root</strong> — the launched target.</li>
+  <li><strong>Confirmed</strong> — a process whose parent was observed inside the tree.</li>
+  <li><strong>Unconfirmed</strong> — attributed by location (started from the root's directory) or because its
+    parent chain was never recorded.</li>
+  <li><strong>Excluded / OutOfScope</strong> — everything else, including the agent's own ancestors.</li>
+</ul>
+
+<p>The interesting, honest case is <strong>Unconfirmed</strong>. Real payloads often escape their recorded parent
+chain (a short-lived <code>cmd.exe</code> spawns something and dies before the table records it). The tracker then
+attributes by location — weaker evidence — and the event carries <code>Unconfirmed</code> so nothing downstream
+can mistake it for a confirmed child. P-008 exists to read exactly this: a process in the application's
+directory with no observed creator is the process-table footprint of cross-process creation, which the kernel
+provider used here cannot see directly.</p>
+
+<p>Exclusions are measured, not guessed. Four examples, each found by running real software:</p>
+<ul>
+  <li>P-004 ignores the monitored root and the root's own directory — a per-user install such as
+    <code>%LOCALAPPDATA%\Programs\Python\python.exe</code> is where the operator installed it.</li>
+  <li>P-006 ignores a launch whose image equals its parent's image — a browser's own <code>--type=...</code>
+    children are not "the same program re-launched with different switches".</li>
+  <li>F-007 excludes compiler caches — the C# compiler's analyzer cache was reported as a dropped payload.</li>
+  <li>F-007 also excludes the PowerShell scratch directory, after a probe tripped it.</li>
+</ul>
+
+<h2 id="s8">8. The 23 rules, explained</h2>
+
+<p>Rules are named <code>F-</code> (file), <code>N-</code> (network), <code>P-</code> (process) and
+<code>X-</code> (correlated). Each has a severity, a channel, a MITRE ATT&amp;CK tag and a kind:
+<em>per-event</em> (one event) or <em>aggregated</em> (a pattern over a window). In the viva, know <em>why each
+rule exists</em> and <em>one sentence on how it avoids false positives</em> — that is what shows you built it.</p>
+
+<table>
+  <thead><tr><th>ID</th><th>Title</th><th>Sev</th><th>Chan.</th><th>Kind</th><th>Why it exists, and how it avoids noise</th></tr></thead>
+  <tbody>
+    <tr><td>F-001</td><td>Write to an autostart location</td><td>80</td><td>file</td><td>event</td><td>Persistence: a Startup write means "runs at next logon". Needs a content-changing write, not a bare create, because create-or-open is ambiguous.</td></tr>
+    <tr><td>F-002</td><td>Write to a Run/RunOnce key</td><td>75</td><td>registry</td><td>event</td><td>Same idea through the registry, on two channels: the command line of <code>reg.exe</code> and the value write attributed through the kernel object pointer (labelled Inferred).</td></tr>
+    <tr><td>F-003</td><td>Scheduled task created</td><td>70</td><td>process</td><td>event</td><td>Persistence through Task Scheduler; watches the task-creation command shape.</td></tr>
+    <tr><td>F-004</td><td>Mass file creation</td><td>55</td><td>file</td><td>agg 60 s</td><td>Preparation/ransomware shape: 200 files in 60 s by default — a number, not a guess.</td></tr>
+    <tr><td>F-005</td><td>Write to a system location</td><td>65</td><td>file</td><td>event</td><td>System-owned path tampering (DLL hijack, replacing binaries). Uses the create disposition so a read of <code>System32</code> is not a hit.</td></tr>
+    <tr><td>F-006</td><td>Destructive rename burst</td><td>85</td><td>file</td><td>agg 60 s</td><td>Ransomware shape. A rename is two ETW records with half the story each, so they are paired. Deletions are <em>not observable</em>, so the rule keys on rewrites plus marker-appending renames rather than pretending deletes exist.</td></tr>
+    <tr><td>F-007</td><td>Executable dropped in writable location</td><td>50</td><td>file</td><td>event</td><td>A payload appearing where it can be run. Excludes compiler caches and the PowerShell scratch dir (both measured false positives).</td></tr>
+    <tr><td>F-008</td><td>Credential store accessed</td><td>70</td><td>file</td><td>event</td><td>Browser login DBs, SSH keys, wallets — recognised by path shape so replay works — with the owning program excluded so a browser reading its own profile stays quiet.</td></tr>
+    <tr><td>N-001</td><td>Risky service port</td><td>45</td><td>net</td><td>event</td><td>Known lateral-movement/service ports used by the monitored program.</td></tr>
+    <tr><td>N-002</td><td>Periodic callbacks</td><td>60</td><td>net</td><td>agg 600 s</td><td>Beaconing, keyed on the <em>coefficient of variation of the intervals</em> — regularity is the signal, not volume.</td></tr>
+    <tr><td>N-003</td><td>Large outbound transfer</td><td>65</td><td>net</td><td>agg 60 s</td><td>Exfiltration shape: 20 MB to one public address in a minute. Needed the new <code>NetFlow</code> byte counts, which connect records never had.</td></tr>
+    <tr><td>N-004</td><td>Bare public address</td><td>35</td><td>net</td><td>event</td><td>A public IP with no DNS lookup before it. Deliberately weak, documented as an ingredient.</td></tr>
+    <tr><td>N-005</td><td>Lookup storm for dead names</td><td>50</td><td>net</td><td>agg 60 s</td><td>DGA shape: many distinct non-existent names. The three-way DNS status keeps one dead host retried quiet, and a timeout (path problem) is not counted as a dead name.</td></tr>
+    <tr><td>P-001</td><td>Shell spawned by non-shell parent</td><td>60</td><td>proc</td><td>event</td><td>"Your PDF opened cmd.exe". Fires only when no creator was recorded.</td></tr>
+    <tr><td>P-002</td><td>Unexpected command interpreter</td><td>85</td><td>proc</td><td>event</td><td>High-severity sibling of P-001. Disjoint by construction: where a creator was observed P-002 speaks; P-001 covers only the interpreter whose creator was never recorded. Otherwise every shell fixture double-fires.</td></tr>
+    <tr><td>P-003</td><td>Interpreter with encoded/remote payload</td><td>75</td><td>proc</td><td>event</td><td><code>cmd /c powershell -enc ...</code> — obfuscation plus a downloader is the shape.</td></tr>
+    <tr><td>P-004</td><td>Launched from user-writable dir</td><td>45</td><td>proc</td><td>event</td><td>A program starting from temp/downloads/appdata is something you just received. Mild, because updaters do it too; skips the monitored root and its directory.</td></tr>
+    <tr><td>P-005</td><td>Unsigned image launched</td><td>30</td><td>proc</td><td>event</td><td>Invalid signature inside the tree. Three-way signature status so Unknown is never reported as unsigned (§10).</td></tr>
+    <tr><td>P-006</td><td>Repeated launches, different switches</td><td>25</td><td>proc</td><td>agg 600 s</td><td>Reconnaissance shape (one tool probing with flags). Ignores parent==image self-spawns so browsers stay quiet.</td></tr>
+    <tr><td>P-007</td><td>Shadow copy / recovery tampering</td><td>80</td><td>proc</td><td>event</td><td>Deleting backups before the attack (<code>vssadmin delete shadows</code> shape).</td></tr>
+    <tr><td>P-008</td><td>Process in app dir, no observed creator</td><td>65</td><td>proc</td><td>event</td><td>The footprint of cross-process creation — reads the scope tracker's Unconfirmed state, since injection is not directly observable here.</td></tr>
+    <tr><td>X-001</td><td>Persistence write then external connection</td><td>90</td><td>file+net</td><td>corr</td><td>Sets up to survive a reboot <em>and</em> reaches out — needs both channels, not one.</td></tr>
+    <tr><td>X-002</td><td>Startup write then execute that file</td><td>85</td><td>proc+file</td><td>corr</td><td>Writes into Startup then runs that <em>same canonical path</em>, matched on <code>PathKey</code> so a same-named program elsewhere cannot correlate.</td></tr>
+  </tbody>
+</table>
+
+<p class="small muted">Every rule ships with at least one firing fixture and one quiet twin. That pair is the
+definition of "the rule works": it fires when the behaviour is present and stays quiet when it is not.</p>
+
+<h2 id="s9">9. The scoring model (with maths)</h2>
+
+<p>The score answers "how much does the evidence so far warrant attention?" It is <strong>not</strong> a
+probability of malware and it is not additive — that is the part examiners probe. The code is
+<code>src/Argus.Core/Risk/RiskScorer.cs</code>.</p>
+
+<h4>Step 1 — each detection becomes a weight</h4>
+<pre>weight = severity/100  ×  confidence  ×  decay(age)</pre>
+<p><code>decay(age) = max(0.60, 0.5 ^ (age / 15 min))</code> — evidence fades with a 15-minute half-life but
+never below 0.60 while the session is open. Old evidence matters less; it is never forgotten mid-session.</p>
+
+<h4>Step 2 — combine as independent evidence, never as a sum</h4>
+<pre>base    = 1 - Π (1 - weight_i)          // "noisy-OR": the chance that at least one is real
+indep.  = number of distinct evidence categories present (file / registry / network / process…)
+corroboration = min(1.25, 1 + 0.08 × (independent - 1))
+score   = clamp(round(base × corroboration × 100, 1), 0, 100)</pre>
+<p>Why noisy-OR instead of a sum: adding severities lets three weak, related findings reach 100 and scream
+"malicious", and the total could exceed any meaningful ceiling. Combining as independent evidence means ten
+copies of the same weak signal asymptote towards it rather than stacking past it. The corroboration factor
+then rewards findings on <em>different channels</em> — persistence in the registry plus a network callback in
+the same session is genuinely more convincing than two file writes.</p>
+
+<h4>Step 3 — decide the band</h4>
+<table>
+  <thead><tr><th>Condition</th><th>Band</th><th>Explanation printed with it</th></tr></thead>
+  <tbody>
+    <tr><td>score ≥ 65 <em>and</em> ≥ 2 independent categories (or a critical rule: severity ≥ 90 at confidence ≥ 0.80)</td><td class="r"><strong>Malicious</strong></td><td>"Risk X is at or above the malicious threshold, corroborated by N independent evidence categories"</td></tr>
+    <tr><td>score ≥ 65 but only <em>one</em> category and no critical rule</td><td class="a"><strong>Suspicious</strong></td><td>"Risk X exceeds the malicious threshold, but only one evidence category is represented, so the verdict stays suspicious"</td></tr>
+    <tr><td>score ≥ 20, or a single rule at severity ≥ 45 fired</td><td class="a"><strong>Suspicious</strong></td><td>"Requires investigation: risk is between the two thresholds / a single high-severity rule fired without corroboration"</td></tr>
+    <tr><td>otherwise</td><td class="g"><strong>Benign</strong></td><td>"Below the suspicious threshold. No significant indicators were observed; that is not proof of safety."</td></tr>
+  </tbody>
+</table>
+
+<p>That second row is the most defensible line in the project: a high score from a single channel is
+deliberately <em>not</em> called malicious. One suspicious behaviour is a lead; two independent ones are a
+story. You can also point at the third row: a severity-45 rule fires suspicious on its own, so a clear
+single-behaviour problem is never buried under the arithmetic.</p>
+
+<p class="small muted">The thresholds live in <code>RiskOptions</code> (suspicious 20, malicious 65,
+critical 90/0.80, half-life 15 min, floor 0.60, corroboration step 0.08 capped at 1.25) — data, not
+constants, and the model is unit-tested against hand-computed values.</p>
+
+<h2 id="s10">10. Honesty rules: observability, gaps, signatures</h2>
+
+<p>This section is the intellectual core of the project, and the most likely place for a hard viva question.
+Each item below is a rule the code enforces, not a slogan in the README.</p>
+
+<h3>(a) Observability is a field, not an adjective</h3>
+<p>Every event carries a level, and the dashboard renders it on every row:</p>
+<table>
+  <thead><tr><th>Level</th><th>Means</th><th>Example</th></tr></thead>
+  <tbody>
+    <tr><td class="g">Direct</td><td>Captured from an OS event for this process.</td><td>Process creation, file write, TCP connect.</td></tr>
+    <tr><td class="a">Partial</td><td>Captured, but attribution or completeness is limited.</td><td>A read sampled under volume pressure; a process-start whose image path could not be resolved.</td></tr>
+    <tr><td class="a">Inferred</td><td>Deduced from a heuristic instead of observed.</td><td>Injection indicators; a registry write whose key was joined through a kernel object pointer.</td></tr>
+    <tr><td class="d">Aggregated</td><td>A rollup of many events; raw detail has aged out.</td><td>Summarised burst counts.</td></tr>
+  </tbody>
+</table>
+
+<h3>(b) Gaps and coverage: "absent" is not "did not happen"</h3>
+<p>If the sensor loses events, the session stops calling itself complete. <code>CoverageAssessment</code>
+turns loss counters into <code>CoverageDto { Complete, Gaps, Reasons, Statement }</code>, the dashboard shows a
+banner that cannot be dismissed, and the report derives a limitation sentence from the real gap list:
+<em>gaps present</em> → "anything inside them may be missing"; <em>no gaps</em> → "the sensor believes it
+delivered every event it produced". Two different sentences, because they are two different claims.</p>
+
+<h3>(c) Signatures are three-way, and two obvious methods were wrong</h3>
+<p><code>SignatureStatus</code> is Valid / Invalid / Unknown, and no value is never read as "unsigned". Two
+plausible implementations were measured and rejected before the current one:</p>
+<ul>
+  <li><code>X509Certificate.CreateFromSignedFile</code> reads only an <em>embedded</em> certificate. Most of
+    <code>System32</code> has none — Windows verifies those by hashing the file and looking the hash up in a
+    signed catalog. That API called a copy of <code>whoami.exe</code> unsigned while
+    <code>Get-AuthenticodeSignature</code> said <em>Valid, Catalog, Microsoft Windows</em>. That is a false
+    fact about provenance, not a threshold to tune.</li>
+  <li><code>WinVerifyTrust</code> resolves embedded signatures only and returns
+    <code>TRUST_E_NOSIGNATURE</code> (0x800B0100) for a catalog-signed file — byte for byte the same code as a
+    file with no signature at all.</li>
+</ul>
+<p>The shipped path builds the Authenticode chain explicitly and treats "could not determine" as
+<code>Unknown</code>, which is why P-005 stays quiet instead of guessing.</p>
+
+<h3>(d) A failure message must tell the truth about the machine</h3>
+<p>When the window cannot show the dashboard, the message must not claim "nothing is being monitored" while
+the agent is running. It prints what failed, and the working dashboard URL. Similarly: unknown counters render
+as "—", never 0, so a broken stats frame and a quiet sensor cannot look alike.</p>
+
+<h3>(e) Weaker evidence is labelled, never presented as stronger</h3>
+<p>Three cases you can quote: a registry write joined through a kernel object pointer is <code>Inferred</code>
+(and dropped as soon as the kernel retires the object, because pointers are reused — the same value was
+measured belonging to two unrelated keys). A process attributed by location is <code>Unconfirmed</code> in
+scope. A read that was sampled says so in the counters. In each case the rule that consumes the evidence is
+written to survive the weaker reading.</p>
+
+<h2 id="s11">11. Sensors: ETW, polling, and what they cannot see</h2>
+
+<h3>ETW in one minute</h3>
+<p><strong>Event Tracing for Windows</strong> is the kernel's own event bus. A <em>session</em> subscribes to
+<em>providers</em> with <em>keywords</em> naming categories of events, and events are delivered to a callback
+in user space. Argus opens its own session (named <code>Argus-&lt;random&gt;</code>) and uses the kernel
+provider's process/file/network keywords plus the DNS client provider and the kernel registry manifest
+provider.</p>
+
+<p>Two things worth knowing because they came up in the work:</p>
+<ul>
+  <li><strong>Why not the NT Kernel Logger?</strong> That session is exclusive — one at a time — so it collides
+    with Procmon and Sysmon. Argus uses manifest providers in its own session instead.</li>
+  <li><strong>Session leak.</strong> Killing an agent leaves its ETW session registered, and the session table
+    is a machine-wide limited resource. Six dead sessions made the next launch fail with
+    <code>0x800705AA</code> "Insufficient system resources", which reads as memory pressure and is nothing of
+    the kind. <code>EtwCollector.ReclaimStaleSessions()</code> stops <em>only</em> <code>Argus-*</code> sessions
+    at startup and reports what it reclaimed; <code>EtwStartFailure.Explain</code> turns the two named HRESULTs
+    into sentences with the fix.</li>
+</ul>
+
+<h3>Why polling is still needed</h3>
+<p>Kernel events are complete for process creation but thin on <em>metadata</em>: the image path of a
+short-lived process and the owning process of a TCP connection are frequently unavailable at event time. So
+there are two pollers — a process snapshot (to back-fill metadata) and the TCP table (to attribute
+connections). Polling results are marked <code>Source = Polling</code>, never confused with <code>Etw</code>.</p>
+
+<h3>What the sensor cannot see (say this before he asks)</h3>
+<table>
+  <thead><tr><th>Thing</th><th>Level</th><th>The measured reason</th></tr></thead>
+  <tbody>
+    <tr><td>File deletion via <code>del</code></td><td class="r">Not observable</td><td>26 live deletions produced zero file events, while a directory removal does surface. So F-006 keys on rewrites and marker renames instead of pretending deletes exist.</td></tr>
+    <tr><td>UDP traffic</td><td class="r">Not observable</td><td>Only TCP is attributed to a process in this session.</td></tr>
+    <tr><td>Payload content, URLs, decrypted traffic</td><td class="r">Not observable</td><td>Only endpoints, sizes and timing are recorded.</td></tr>
+    <tr><td><code>CreateRemoteThread</code> / injection</td><td class="a">Inferred</td><td>The kernel provider used here has no thread-injection keyword. P-008 reads the process table for its footprint instead.</td></tr>
+    <tr><td>Reads</td><td class="a">Partial</td><td>Sampled under volume pressure; the sampling is counted and reported.</td></tr>
+    <tr><td>Anything before/after a session</td><td class="r">Not observable</td><td>Argus is not a service: nothing is collected while no session is open.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="s12">12. The dashboard and the desktop shell</h2>
+
+<p>A React 19 + TypeScript + Tailwind v4 single-page app in <code>web/</code>, served by the agent itself.
+Nine routes: eight data screens (Sessions, Live, Processes, Files, Network, Detections, Timeline, Search)
+plus Settings.</p>
+
+<table>
+  <thead><tr><th>Screen</th><th>What it answers</th><th>Notable implementation detail</th></tr></thead>
+  <tbody>
+    <tr><td>Sessions</td><td>What is running / ran, verdict and score</td><td>"Monitor an application" opens the launch dialog; the list polls every 10 s until a running session appears (the packaged window has no refresh button).</td></tr>
+    <tr><td>Live</td><td>Right now: counters, signal feed, risk curve</td><td>SSE subscription with a single-use ticket; the risk chart marks detections.</td></tr>
+    <tr><td>Processes</td><td>The tree, with scope and signature</td><td>Scope state rendered as text, not colour only.</td></tr>
+    <tr><td>Files</td><td>Creates, writes, renames with effect</td><td>Virtualised table (100k rows asserted in a test).</td></tr>
+    <tr><td>Network</td><td>Destinations, volume, DNS</td><td>Private vs public is a labelled signal, not a verdict.</td></tr>
+    <tr><td>Detections</td><td>Each finding with reason, counterfactual, evidence chain</td><td>Expands into exactly the events the agent says the detection rests on.</td></tr>
+    <tr><td>Timeline</td><td>Everything in order, aggregated</td><td>Reconstructs the story for the report narrative.</td></tr>
+    <tr><td>Search</td><td>Free text over events</td><td>Ctrl+K or <code>/</code> from anywhere; keyboard-driven.</td></tr>
+    <tr><td>Settings</td><td>What the agent is configured with</td><td>Read-only on purpose (§13).</td></tr>
+  </tbody>
+</table>
+
+<h3>Two design decisions you will be asked about</h3>
+<div class="card">
+  <p style="margin:0"><strong>1. The agent serves the dashboard instead of a proxy.</strong> Same origin means
+  the bearer token and the host/origin guard work with no CORS and no Origin rewriting. An earlier proxy setup
+  produced exactly the bugs the switch removed: a rewritten <code>Host</code> header and a 403 on the ticket
+  POST.</p>
+</div>
+<div class="card">
+  <p style="margin:0"><strong>2. SSE uses single-use tickets, not a token in the URL.</strong>
+  <code>EventSource</code> cannot send an <code>Authorization</code> header, so the usual shortcut is
+  <code>?token=...</code> — which then lives in the address bar, the browser history and any proxy log. Instead
+  the client POSTs to <code>/api/sessions/{id}/stream-ticket</code> with the bearer header and receives a
+  ticket valid for 30 seconds and one use. Scripts: <code>check-stream-ticket.sh</code> (8/8) and
+  <code>check-sse-reconnect.sh</code> (4/4, reconnects and recovers the snapshot).</p>
+</div>
+
+<h3>The desktop shell (<code>Argus.Desktop</code>)</h3>
+<p>WinForms + WebView2, running at normal integrity (<code>asInvoker</code>). It starts
+<code>argus-agent --elevate</code>, waits for the agent's ready line (JSON with port and token), then shows the
+dashboard inside a WebView2 control. Its own bugs were found by running it, and they are good viva material:</p>
+<ul>
+  <li><strong>Deadlock on <code>ReadToEnd</code>.</strong> The elevated child inherits the pipe handle, so the
+    parent blocked waiting for EOF that could never come. Fixed by reading until the first <code>{</code>-prefixed
+    line, bounded to 90 s.</li>
+  <li><strong><code>async void</code> swallowed failures.</strong> Exceptions in an <code>async void</code>
+    method are not awaited, so the window failed silently. Now caught, written to
+    <code>%TEMP%\argus-desktop.log</code> with <code>exception.ToString()</code>, and surfaced in the window.</li>
+  <li><strong><code>WebView2Loader.dll</code> missing from output</strong>, producing a bare
+    <code>E_NOTIMPL (0x80070032)</code> that names neither the file nor the architecture. Copied explicitly by
+    the project file.</li>
+  <li><strong>The runtime locator read only the machine-wide registration.</strong> The runtime was installed
+    per user; the check said "not installed". It now reads HKLM (native + WOW6432Node) and HKCU and uses the
+    registration's own <code>location</code>. Measured: <em>WebView2 runtime 157.0.4341.42 (per user)</em>, and
+    the eight-screen dashboard rendered in the window.</li>
+</ul>
+
+<h2 id="s13">13. The report export and Settings</h2>
+
+<h3>Report export</h3>
+<p>The report exists in two formats rendered from <strong>one snapshot</strong>
+(<code>SessionReport.Snapshot</code>), so a section cannot appear in one and be missing from the other — two
+independent builders had already begun to drift.</p>
+<ul>
+  <li><strong>HTML</strong>: executive summary (target, verdict + score + peak, window, coverage),
+    activity counts, every detection with reason, counterfactual, categories, timestamps and its own evidence
+    events with observability, the process table with signatures, risk over time, collection health, the
+    observability table, limitations, and the raw JSON bundle embedded in the document. No scripts, no
+    external asset — a live test asserts that a report cannot need the network to render.</li>
+  <li><strong>JSON</strong>: the same data for tooling.</li>
+  <li><strong>Limitations are derived, not boilerplate</strong>: a report that prints the same five caveats
+    every time trains the reader to skip them. Gaps present → "anything inside them may be missing"; the
+    volume fuse throttled → "the counts are a sample under pressure"; counters unreadable → a different
+    warning again.</li>
+  <li><strong>Provenance</strong>: agent version, Windows build and a <code>configHash</code> (SHA-256 over the
+    rule thresholds + version, 16 hex). Two sessions recorded under different thresholds are not comparable,
+    and the report says which one produced it.</li>
+  <li><strong>Downloading it had to be a fetch.</strong> A link cannot carry the bearer header and a token in a
+    URL is exactly what the tickets avoid, so the button fetches with the header, turns the response into a
+    blob and saves it. The token never reaches the address bar, history or a proxy log.</li>
+</ul>
+
+<h3>Settings reports rather than pretends</h3>
+<p>The plan sketched a page of toggles (collection profile, sampling, retention, ML mode). The agent parses its
+options at launch and loads the rule settings once — nothing reloads — so a toggle could not take effect.
+Instead <code>GET /api/settings</code> (read-only) answers what <em>is</em> in force: version, pid, elevation,
+OS build, runtime, the <strong>bound</strong> port, data root, dashboard root, ETW session name, duration
+limit, every rule threshold with its human label <em>and</em> its raw key, the config digest and the
+observability table. The screen prints them with the restart instruction beside them, carries no checkbox or
+slider, and a test asserts that.</p>
+<p class="small muted">Writing it exposed a small lie: <code>--port 0</code> (let the OS choose) was reported as
+<code>port: 0</code>. The endpoint now reports the port Kestrel actually bound and keeps the requested one
+beside it.</p>
+
+<h2 id="s14">14. Testing: how I know it works</h2>
+
+<div class="kpi">
+  <div><b>254</b><span>.NET unit tests</span></div>
+  <div><b>54</b><span>recorded scenarios</span></div>
+  <div><b>20</b><span>fixture Playwright</span></div>
+  <div><b>8</b><span>live Playwright</span></div>
+  <div><b>6</b><span>benign corpus apps</span></div>
+</div>
+
+<h3>The fixture harness (why the 54 scenarios are the real evidence)</h3>
+<p>A scenario is a <code>.jsonl</code> file: a <code>$meta</code> line declaring expectations, then recorded
+events. <code>Argus.Cli</code> replays them through the <em>real</em> pipeline (same normalizer, same scope
+tracker, same rules, same scorer) and asserts the outcome.</p>
+<pre>{"$meta":{"name":"unsigned-setup-spawns-shell",
+  "expect":{"rules":["P-002"],"absentRules":["P-001"],"band":"Suspicious",
+            "minScore":10,"maxScore":35,"maxDetections":2}}}</pre>
+<p>Each rule needs at least one <em>firing</em> fixture and one <em>quiet twin</em>. That is what makes "the rule
+works" a measurement rather than an opinion, and the <code>absentRules</code> field is what caught P-001 and
+P-002 double-firing on every shell scenario.</p>
+
+<h3>The benign corpus (<code>docs/BENIGN-CORPUS.md</code>)</h3>
+<p>Six real applications — notepad, 7-Zip, Python, <code>dotnet run</code>, Chrome, an Electron IDE — captured
+live and expected to produce <strong>Benign 0.0, zero detections, zero gaps</strong>. This is the false-positive
+test, and it is where three rule bugs were found on evidence (§15).</p>
+
+<h3>The gates</h3>
+<pre>bash scripts/verify.sh          # build, all tests, catalogue gate, all 54 scenarios, self-test, load
+powershell scripts/verify.ps1 -Smoke   # the Windows live smoke (needs elevation)</pre>
+<p>The <strong>catalogue gate</strong> is worth mentioning: <code>docs/RULES.md</code> must match
+<code>argus rules --markdown</code> exactly, so a rule cannot be added or re-severitied without its
+documentation changing in the same commit.</p>
+
+<h3>The dashboard tests</h3>
+<p>Playwright runs against payloads <em>captured from real sessions</em> by
+<code>scripts/dashboard-fixtures.ps1</code> (two sets: benign and flagged), not against hand-written mocks — so
+a DTO change cannot pass the test while breaking the UI. Two modes on one code path:
+<code>?fixtures=</code> or live + bearer. The live suite additionally covers the launch flow, the ticket stream,
+the stats frame and the export download.</p>
+
+<h2 id="s15">15. Measured bugs and how I found them</h2>
+
+<p>These are the stories that make a viva go well, because each shows a defect that only measurement could
+reveal. All are in <code>docs/HANDOFF.md</code>.</p>
+
+<table>
+  <thead><tr><th>Bug</th><th>How it was found</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td>Kernel registry cache traffic mapped as value writes by substring</td><td>A session that ran only <code>echo hello</code> collected <strong>104 bogus deletes</strong> against <code>SafeBoot</code></td><td>Stop mapping <code>KCBCreate</code>/<code>KCBDelete</code>; use the manifest provider and join by kernel object</td></tr>
+    <tr><td>Registry writes could not be attributed at all</td><td>The kernel keeps the key name in the open record and the write in a separate record, joined only by an object pointer</td><td>Resolve writes through that object, mark <code>Inferred</code>, drop when the kernel retires it</td></tr>
+    <tr><td><code>System32</code> binary opens reported as writes</td><td>Every process start produced an F-005 hit</td><td>Read the create disposition (<code>FileEffect</code>) so create ≠ open</td></tr>
+    <tr><td>Deletions appear to work</td><td>26 live <code>del</code>s produced zero events</td><td>Documented as not observable; F-006 redesigned around rewrites + marker renames</td></tr>
+    <tr><td>Every shell fixture reported two findings</td><td>The <code>absentRules</code> assertion in old fixtures</td><td>P-001 and P-002 made disjoint by construction (creator observed vs not)</td></tr>
+    <tr><td>F-007 firing on a C# compiler's analyzer cache</td><td>Benign corpus run of <code>dotnet run</code></td><td>Exclusion with a named reason</td></tr>
+    <tr><td>P-004 firing on the monitored app itself</td><td>Benign corpus: Python installed per user under <code>%LOCALAPPDATA%</code></td><td>Skip the root pid and the root's own directory</td></tr>
+    <tr><td>P-006 firing on a browser's <code>--type=</code> children</td><td>Benign corpus: Chrome / Electron IDE</td><td>Ignore a launch whose image equals its parent's image</td></tr>
+    <tr><td>First ~150 ms of every session lost; short-lived targets lost their final events</td><td>Live probe: 1 event vs 11 for the same probe</td><td>Late root attach (start capture before the target) and drain before stopping</td></tr>
+    <tr><td>Volume fuse marked clean sessions <code>incomplete</code></td><td>It was counting machine-wide noise</td><td>Count only in-scope events</td></tr>
+    <tr><td>Live screen showed "events seen 0" while 383,064 were counted</td><td>Reading a live session's own counters — the stats frame was flat while the connect frame nested them under <code>monitor</code></td><td>One payload shape for both frames; unknown counters now render "—"</td></tr>
+    <tr><td>Six leaked ETW sessions made the next launch fail with <code>0x800705AA</code></td><td>Killing agents repeatedly while testing the desktop shell</td><td><code>ReclaimStaleSessions()</code> for <code>Argus-*</code> only, with a message saying what it reclaimed</td></tr>
+    <tr><td>A process-metadata retry made things worse</td><td>Measured: 13/24 resolved with 1 attempt vs 9/24 with 4 — between attempts the process is <em>more</em> dead, and the sleep ran on the ETW dispatch thread</td><td>Reverted, with the measurement written down (§12.18); the honest limitation stands</td></tr>
+    <tr><td>A detection row said PID 792 while its own reason said PID 6912</td><td>Reading the first real exported report</td><td>Several rules group under the initiating process, so the row now says "grouped under PID 792 · evidence from PID 6912"</td></tr>
+  </tbody>
+</table>
+
+<h2 id="s16">16. Limitations — say these before he asks</h2>
+
+<div class="card no">
+  <p style="margin:0"><strong>Product limitations (by design, not defects)</strong></p>
+  <ol style="margin:8px 0 0">
+    <li><strong>Not a sandbox.</strong> Argus observes; it does not contain, block or clean. Running a real
+      sample on your own machine is still dangerous.</li>
+    <li><strong>Not a service.</strong> Nothing is collected before a session starts or after it stops, and a
+      session list is per agent process — restarting the agent does not show old sessions in the UI (the SQLite
+      databases are still on disk under <code>%LOCALAPPDATA%\Argus\sessions</code>).</li>
+    <li><strong>One monitored tree.</strong> Machine-wide activity outside the root's tree is counted as
+      "outside scope", not analysed.</li>
+    <li><strong>Rule-based, not learning.</strong> 23 hand-written rules with tunable thresholds. No model.
+      A machine-learning advisory layer is the next phase in the plan and has not been built.</li>
+    <li><strong>Near-real-time.</strong> ETW buffering and batching add roughly 1–3 seconds; nothing here is
+      hard real-time.</li>
+  </ol>
+</div>
+
+<div class="card hi">
+  <p style="margin:0"><strong>Unverified on this machine (say it plainly)</strong></p>
+  <ul style="margin:8px 0 0">
+    <li>The UAC consent <em>click</em> itself (an unattended VM cannot press Yes); the relaunch path is code,
+      not observed end to end.</li>
+    <li>Event loss and the volume fuse under sustained heavy load on a busy machine.</li>
+    <li>A non-trivial target such as 7-Zip end to end through the dashboard (it is in the benign corpus, but
+      the full launch → report path was driven with simpler targets).</li>
+  </ul>
+</div>
+
+<p class="small muted">Why say this: the project's own thesis is that a tool must state what it did not see.
+Reading the limitations out before the examiner finds them is consistent with the work and removes the only
+argument that could damage the viva.</p>
+
+<h2 id="s17">17. Viva questions and answers</h2>
+
+<p>Grouped the way a 30-minute viva arrives: opening questions, then "how does it actually work" (random pokes),
+then code-level questions, then the harder design questions. Each answer is written to be <em>said out loud in
+about 20–40 seconds</em>.</p>
+
+<h3>A. Opening / what and why</h3>
+
+<div class="qa">
+  <div class="q">What does your project do, in one sentence?</div>
+  <div class="say">It watches a single Windows program while it runs — process starts, file writes, registry
+    writes, network connections, DNS — and gives it a 0-to-100 risk score with the reason for every finding and
+    an explicit statement of what it could not see.</div>
+  <div class="why">Lead with "single program" and "with the reason"; those are what make it different from Procmon.</div>
+</div>
+
+<div class="qa">
+  <div class="q">How is this different from antivirus?</div>
+  <div class="say">Antivirus asks "is this file known-bad" and needs a signature. Argus asks "what did this
+    program do while I watched it" and reasons about behaviour, so it works on something nobody has seen before.
+    It also does not block anything — it reports.</div>
+</div>
+
+<div class="qa">
+  <div class="q">How is it different from Process Monitor?</div>
+  <div class="say">Procmon shows raw events with no judgement. Argus filters to the monitored process tree,
+    runs 23 detection rules, merges repeated hits, and produces a score with an explanation, a counterfactual
+    and the evidence sequence numbers so you can jump back to the exact events.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What is the biggest limitation?</div>
+  <div class="say">It is not a sandbox and it is not a service: it only sees what happens while a session is
+    open, and it does not contain the program. I state that in the report itself, along with the specific
+    things the sensor cannot see — for example file deletions made with <code>del</code> never appear as file
+    events, which I measured: 26 deletions produced zero events.</div>
+  <div class="why">Naming a measured gap is far stronger than "some limitations exist".</div>
+</div>
+
+<h3>B. Random pokes: "how does X work?"</h3>
+
+<div class="qa">
+  <div class="q">How do you get the events from Windows?</div>
+  <div class="say">Event Tracing for Windows. I open my own ETW session and subscribe to the kernel provider
+    for process, file and network events, plus the DNS client provider and the kernel registry provider. The
+    agent is elevated because the kernel provider needs it. I deliberately do not use the NT Kernel Logger
+    session, because it is exclusive and would collide with Procmon or Sysmon.</div>
+</div>
+
+<div class="qa">
+  <div class="q">How do you know which process an event belongs to?</div>
+  <div class="say">Two steps. The event carries the pid, and a scope tracker classifies it: the root target,
+    a confirmed child whose parent I saw inside the tree, or unconfirmed — attributed by directory because its
+    parent chain was never recorded. Everything else is out of scope and only counted. For TCP I read the TCP
+    table because the connection event alone often cannot name the owner.</div>
+</div>
+
+<div class="qa">
+  <div class="q">Show me a rule. Pick one at random.</div>
+  <div class="say">Say it is N-002, beaconing. It does not count connections; it looks at the intervals between
+    them and computes the coefficient of variation. A human browsing has irregular intervals; a beacon has
+    nearly identical ones. If the variation is below the threshold with at least six connections in the window,
+    it reports — grouped per endpoint, over ten minutes. It is "aggregated", not per-event, because no single
+    connection is suspicious.</div>
+  <div class="why">The two sentences that land: "it does not count, it measures regularity" and "per-event vs aggregated".</div>
+</div>
+
+<div class="qa">
+  <div class="q">How do you avoid false positives?</div>
+  <div class="say">Three ways. First, every rule has a quiet twin fixture, so a rule that fires on benign
+    behaviour fails the test suite. Second, I captured a benign corpus of six real applications — notepad,
+    7-Zip, Python, dotnet run, Chrome, an Electron IDE — and the target is Benign 0.0 with zero detections and
+    zero gaps; that exercise found three genuine rule bugs. Third, exclusions are narrow and named: P-004 skips
+    the monitored program's own directory, P-006 ignores a child whose image equals its parent's, F-007 skips
+    compiler caches.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What happens if the sensor drops events? Do you still say "clean"?</div>
+  <div class="say">No. Coverage is computed from the loss counters; if events were lost the session is marked
+    incomplete, the dashboard shows a banner that cannot be dismissed, and the report changes its limitation
+    sentence to "anything that happened inside the gaps may be missing". And the benign verdict always reads
+    "no significant observed indicators", never "safe".</div>
+</div>
+
+<div class="qa">
+  <div class="q">What is the score exactly? Is it a probability?</div>
+  <div class="say">No, it is a bounded evidence score, not a probability. Each detection becomes weight =
+    severity × confidence × a time-decay factor with a 15-minute half-life and a floor of 0.6. The weights are
+    combined with a noisy-OR — one minus the product of one minus each weight — so evidence cannot be summed
+    past 100, and then multiplied by a corroboration factor of up to 1.25 when findings come from different
+    channels. Bands: below 20 benign, 20 and above suspicious, 65 and above malicious but only with two
+    independent categories or a critical rule.</div>
+  <div class="why">If he pushes on "why not add them up": because three weak findings would then reach 100 and scream malicious, and the score could exceed any meaning.</div>
+</div>
+
+<div class="qa">
+  <div class="q">Why doesn't a single 90-severity finding make the session malicious?</div>
+  <div class="say">It can — severity 90 at confidence 0.8 is a "critical rule" and it is allowed to cross into
+    malicious alone. Below that, a high score from one channel stays suspicious, because one suspicious
+    behaviour is a lead and two independent ones are a story. The explanation printed with the verdict says
+    exactly which case applied.</div>
+</div>
+
+<h3>C. Code-level: "what does this file do?"</h3>
+
+<div class="qa">
+  <div class="q">Point at <code>ProcessScopeTracker.cs</code>. What is it?</div>
+  <div class="say">It decides whether an event belongs to the monitored tree. It keeps a map of pid to scope
+    state — root, confirmed, unconfirmed, excluded — updated on every process-start event from the kernel's
+    parent link. For non-start events it looks the pid up. Unconfirmed means "attributed by location", which is
+    weaker evidence, and it is carried on the event as a field so nothing downstream can treat it as confirmed.</div>
+</div>
+
+<div class="qa">
+  <div class="q">Why does <code>PathKey</code> exist?</div>
+  <div class="say">Because two spellings of the same file must compare equal. It canonicalises and case-folds
+    the path, and provides "directory name" and "is under" helpers. Both the sensitive-path catalog and the
+    correlated rule X-002 use it — X-002 matches the file written into Startup to the file later executed by
+    canonical path, not by file name, so a same-named program elsewhere cannot correlate.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What is <code>Observability</code> in <code>BehaviorEvent</code>?</div>
+  <div class="say">How directly the sensor saw the fact: Direct from an OS event, Partial when attribution or
+    completeness is limited, Inferred when it was deduced — the injected-process footprint, or a registry
+    write whose key was resolved through a kernel object pointer — and Aggregated for rollups. It is a required
+    field, and the dashboard renders it on every row, because the project's sixth requirement is that observed
+    and inferred evidence are never blurred.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What is <code>RuleFinding.Counterfactual</code>?</div>
+  <div class="say">The exact behaviour that would have stopped the rule firing. For F-002 it is "a read or a
+    delete, or a write to a key Windows does not execute at sign-in". It is mandatory in the contract, so a
+    rule cannot be written without stating where its own boundary is. It appears in the dashboard and in the
+    exported report.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What does <code>DetectionAggregator</code> do?</div>
+  <div class="say">It collapses repeated rule hits into one detection per rule and process inside a merge
+    window — so a looping program produces one card with a count instead of thousands — and it escalates the
+    card when a new evidence channel joins. It also appends the event sequence numbers, which is what makes the
+    evidence chain clickable.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What does <code>VolumeGovernor</code> do?</div>
+  <div class="say">It watches the event rate. Above a threshold it starts sampling reads and marks the session
+    as throttled, and that fact is carried into the counters and into the report as "counts are a sample under
+    pressure". It counts only in-scope events — before I fixed that, machine-wide noise marked clean sessions
+    incomplete.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What is in the SQLite database?</div>
+  <div class="say">Four tables plus a full-text index: events, detections, processes and score samples. The
+    events table is what the Files, Network, Timeline and Search screens read; the raw events are also appended
+    to a JSONL file, which is both the evidence of record and the source for the replay fixtures.</div>
+</div>
+
+<div class="qa">
+  <div class="q">How does the dashboard get live data?</div>
+  <div class="say">Server-sent events. The client asks for a single-use ticket with its bearer token, then
+    opens the stream with that ticket in the URL — so the token itself never appears in a URL, the address bar
+    or a log. The stream sends a state frame, a stats frame, event batches, detections and score updates, plus
+    a gap frame when something was lost.</div>
+</div>
+
+<div class="qa">
+  <div class="q">Why does the agent serve the web app instead of a dev proxy?</div>
+  <div class="say">Same origin. The bearer token and the host/origin guard then work with no CORS and no
+    Origin rewriting — and the proxy setup I had first produced exactly those two bugs: a rewritten Host header
+    and a 403 on the ticket POST.</div>
+</div>
+
+<h3>D. Harder / design questions</h3>
+
+<div class="qa">
+  <div class="q">How do you know a binary is unsigned? Prove it.</div>
+  <div class="say">Three-way status: valid, invalid, or unknown, and unknown is never treated as unsigned. Two
+    obvious implementations are wrong and I measured both. <code>X509Certificate.CreateFromSignedFile</code>
+    only reads an embedded certificate, so it called a copy of <code>whoami.exe</code> unsigned while
+    <code>Get-AuthenticodeSignature</code> said valid by catalog. <code>WinVerifyTrust</code> returns
+    <code>TRUST_E_NOSIGNATURE</code> for catalog-signed files — the same code as no signature at all. So the
+    shipped path builds the Authenticode chain explicitly and returns Unknown when it cannot decide.</div>
+  <div class="why">This answer is the best proof in the project that the work was measured rather than assumed.</div>
+</div>
+
+<div class="qa">
+  <div class="q">Can you detect file deletion?</div>
+  <div class="say">No — and I know that from measurement, not from documentation: 26 live deletions produced
+    zero file events, while a directory removal does surface. So F-006, which is the ransomware-shaped rule,
+    keys on rewrites and marker-appending renames instead of pretending deletions are visible. The report's
+    observability table states it.</div>
+</div>
+
+<div class="qa">
+  <div class="q">How would you detect process injection?</div>
+  <div class="say">Not directly with the providers I use — the kernel provider here has no thread-injection
+    keyword. So P-008 detects its footprint instead: a process in the application's directory whose creator was
+    never observed, which is what cross-process creation leaves in the process table. It is labelled Inferred,
+    not Direct.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What if the program does nothing suspicious for ten minutes and then acts?</div>
+  <div class="say">The score decays with a half-life of 15 minutes but has a floor of 0.6, so early evidence
+    fades rather than disappearing while the session is open; new behaviour pushes it back up immediately, and
+    the peak score is recorded separately so the report shows the highest point even if risk has fallen since.</div>
+</div>
+
+<div class="qa">
+  <div class="q">Two copies of the same weak signal — do they double the score?</div>
+  <div class="say">No. Repeats are merged by the aggregator into one detection with a count, and even separate
+    detections combine with noisy-OR, so ten copies of a 0.2-weight signal approach 0.2, they never reach 1.
+    Confidence does rise with a repeat count, which is why the merge is not just cosmetic.</div>
+</div>
+
+<div class="qa">
+  <div class="q">How do you test something that needs Windows kernel events?</div>
+  <div class="say">Three levels. Unit tests for everything pure — scope tracking, scoring, path keys, every
+    rule. Recorded scenarios: 54 JSONL fixtures replayed through the real pipeline with asserted rules, absent
+    rules, band and score range, so a rule change that fires on a benign twin fails. And live probes: I run a
+    real session, capture the JSON the agent serves, and use that capture as the dashboard's fixture, so the UI
+    tests cannot pass while a DTO breaks the page.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What did you get wrong, and how did you find out?</div>
+  <div class="say">Several, all written up. A session that ran only <code>echo hello</code> collected 104 bogus
+    registry deletes because I was mapping the kernel's cache traffic by substring. Every <code>System32</code>
+    binary open was reported as a write until I read the create disposition. The first version of P-001 and
+    P-002 made every shell fixture report two findings, so I made them disjoint by construction. And a
+    metadata retry I added for short-lived processes made results worse — 9 of 24 resolved instead of 13 —
+    because between attempts the process is more dead and the sleep blocked the dispatch thread; I reverted it
+    and wrote down the measurement.</div>
+  <div class="why">Having a "what I got wrong" answer ready is usually the difference between a good and a great viva.</div>
+</div>
+
+<div class="qa">
+  <div class="q">What would you do next?</div>
+  <div class="say">Two things, in order. The plan's phase five is a full end-to-end run on a clean Windows VM
+    with a documented demo script, then a limitations document. After that, an advisory machine-learning layer
+    that is displayed beside the rule score and never changes the verdict until it is calibrated — because a
+    model that cannot explain itself would undo the main property of the project.</div>
+</div>
+
+<h2 id="s18">18. Demo script and numbers to quote</h2>
+
+<h3>The five-minute demo</h3>
+<ol>
+  <li><code>bash scripts/verify.sh</code> — all tests, the catalogue gate, 54/54 scenarios. <em>This is the
+    cheapest proof; show it first.</em></li>
+  <li>Run the desktop app, or <code>dotnet run --project src/Argus.Agent -- --web-root web/dist</code> and open
+    the printed URL. Point out that the agent serves the dashboard (same origin).</li>
+  <li>Click <strong>Monitor an application</strong>, type <code>C:\Windows\System32\notepad.exe</code>, then
+    <strong>Check this file</strong>: show the signature check and SHA-256 preview before anything starts.</li>
+  <li><strong>Start monitoring.</strong> On Live: counters, coverage "complete", flat risk chart, harmless
+    signal feed. Say "Benign 0.0 means no significant observed indicators, not proof of safety".</li>
+  <li>If you want a detection live, launch <code>cmd.exe</code> as the target with arguments
+    <code>/c reg add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Demo /d C:\Windows\System32\notepad.exe /f</code>.
+    Within seconds F-002 appears twice — once from the command line, once from the registry write (labelled
+    Inferred) — and the verdict turns Suspicious. <em>Clean the value up afterwards:
+    <code>reg delete ... /v Demo /f</code>.</em></li>
+  <li>Open <strong>Detections</strong>, expand one card: reason, counterfactual, evidence events with their
+    observability labels.</li>
+  <li>Click <strong>HTML</strong> in the header: the exported report opens from <code>file://</code> with
+    summary, detections, evidence, collection health, the observability table, limitations and the embedded
+    JSON.</li>
+  <li>Open <strong>Settings</strong>: thresholds in force, config digest, bound port — and say why there are no
+    toggles (the agent reads its options at launch).</li>
+</ol>
+
+<h3>Numbers you should be able to state without looking</h3>
+<table>
+  <thead><tr><th>Question</th><th>Number</th></tr></thead>
+  <tbody>
+    <tr><td>Rules shipped</td><td>23 of 23 (8 file, 5 network, 8 process, 2 correlated)</td></tr>
+    <tr><td>Tests</td><td>254 .NET (102 core, 141 analysis, 11 storage) + 54 scenarios + 28 Playwright</td></tr>
+    <tr><td>Score thresholds</td><td>suspicious ≥ 20, malicious ≥ 65 (needs 2 categories or a critical rule)</td></tr>
+    <tr><td>Decay</td><td>15-minute half-life, floor 0.60</td></tr>
+    <tr><td>Corroboration</td><td>+0.08 per extra evidence category, capped 1.25</td></tr>
+    <tr><td>Critical rule</td><td>severity ≥ 90 at confidence ≥ 0.80</td></tr>
+    <tr><td>Benign corpus</td><td>6 apps, Benign 0.0, 0 detections, 0 gaps</td></tr>
+    <tr><td>Line count</td><td>~15,000 lines of C# plus the React dashboard</td></tr>
+    <tr><td>Detections suppressed</td><td>repeats merge per rule+process in a 5-minute window</td></tr>
+  </tbody>
+</table>
+
+<h3>If something breaks during the demo</h3>
+<ul>
+  <li><strong>Dashboard does not load:</strong> the agent prints its URL and token at startup; confirm
+    <code>web/dist</code> exists (<code>npm --prefix web run build</code>).</li>
+  <li><strong>Launch fails with a resource error:</strong> leaked ETW sessions — the agent reclaims
+    <code>Argus-*</code> automatically now, and says how many.</li>
+  <li><strong>Nothing appears for a session started outside the window:</strong> the list polls every 10 s; that
+    is by design, and it is a good thing to explain rather than hide.</li>
+</ul>
+
+<h2 id="s19">19. Glossary</h2>
+<table>
+  <thead><tr><th>Term</th><th>Meaning in this project</th></tr></thead>
+  <tbody>
+    <tr><td>ETW</td><td>Event Tracing for Windows — the kernel's event bus; a session subscribes to providers with keywords.</td></tr>
+    <tr><td>Provider / keyword</td><td>An event source inside Windows, and a category mask selecting which of its events you receive.</td></tr>
+    <tr><td>Manifest provider</td><td>A modern, structured provider (as opposed to the classic MOF-based keyword); the registry one used here is a manifest provider.</td></tr>
+    <tr><td>NT Kernel Logger</td><td>The classic exclusive kernel session — avoided here because it collides with Procmon/Sysmon.</td></tr>
+    <tr><td>Scope</td><td>Whether a process/event belongs to the monitored tree: root, confirmed, unconfirmed, excluded.</td></tr>
+    <tr><td>Rule</td><td>One behavioural predicate with a severity, MITRE tag and kind (per-event or aggregated).</td></tr>
+    <tr><td>Detection</td><td>An aggregated rule hit per rule+process, with counted repeats and evidence sequence numbers.</td></tr>
+    <tr><td>Counterfactual</td><td>The behaviour that would have stopped the rule firing.</td></tr>
+    <tr><td>Observability</td><td>Direct / Partial / Inferred / Aggregated — how directly the fact was seen.</td></tr>
+    <tr><td>Coverage / gap</td><td>Whether the sensor delivered everything it produced; a gap is a recorded loss with a reason.</td></tr>
+    <tr><td>Noisy-OR</td><td>Combining independent evidence as 1 − Π(1 − w) instead of adding weights.</td></tr>
+    <tr><td>Authenticode / catalog</td><td>Embedded signature vs a hash entry in a signed catalog (how Windows verifies most of <code>System32</code>).</td></tr>
+    <tr><td>SSE / ticket</td><td>Server-sent events used for live push; the ticket is a single-use, 30-second credential so the token stays out of URLs.</td></tr>
+    <tr><td>Fixture / scenario</td><td>A recorded JSONL event stream replayed through the real pipeline with asserted expectations.</td></tr>
+    <tr><td>Baseline corpus</td><td>The six benign applications that must stay at 0.0.</td></tr>
+    <tr><td>MITRE ATT&amp;CK</td><td>The public catalogue of adversary techniques each rule is tagged against (T1547.001 etc.).</td></tr>
+  </tbody>
+</table>
+
+<hr>
+<p class="small muted">Prepared for a 30-minute viva. Everything here is checkable in the repository:
+<code>docs/RULES.md</code> (catalogue, generated), <code>docs/HANDOFF.md</code> (work log with the measurements
+quoted above), <code>docs/BENIGN-CORPUS.md</code> (benign results and triage), <code>PLAN.md</code> (the plan and
+its acceptance criteria), and <code>scripts/verify.sh</code> (the gate that regenerates the numbers).</p>
+
+</div>
+</body>
+</html>
