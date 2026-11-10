@@ -10,6 +10,11 @@ import type { MonitorEvent } from '../api/types';
 
 type Link = 'connecting' | 'open' | 'reconnecting' | 'fixture';
 
+/** A counter the stream has not reported yet reads "—", never 0. */
+function counter(value: number | undefined): string {
+  return typeof value === 'number' ? number(value) : '—';
+}
+
 /**
  * Live dashboard. Frames arrive over SSE (state, stats, events, detection, score, gap); the screen
  * treats them as hints and refetches the snapshot on reconnect, so a dropped connection recovers the
@@ -170,12 +175,17 @@ export function LiveScreen() {
 
         <Panel title="Collection health">
           <dl className="grid grid-cols-2 gap-2 p-3 text-[11px]">
-            <div><dt className="text-ink-400">events seen</dt><dd>{number(stats?.monitor?.eventsSeen ?? 0)}</dd></div>
-            <div><dt className="text-ink-400">forwarded</dt><dd>{number(stats?.monitor?.eventsForwarded ?? allEvents.length)}</dd></div>
-            <div><dt className="text-ink-400">outside scope</dt><dd>{number(stats?.monitor?.outsideScope ?? 0)}</dd></div>
+            {/* Unknown is not zero. The fallbacks here used to print 0 for "the frame has not arrived
+                yet" and the rendered-row count for "forwarded", which is how a broken stats frame looked
+                like a quiet sensor instead of an error. */}
+            <div><dt className="text-ink-400">events seen</dt><dd>{counter(stats?.monitor?.eventsSeen)}</dd></div>
+            <div><dt className="text-ink-400">forwarded</dt><dd>{counter(stats?.monitor?.eventsForwarded)}</dd></div>
+            <div><dt className="text-ink-400">outside scope</dt><dd>{counter(stats?.monitor?.outsideScope)}</dd></div>
             <div>
               <dt className="text-ink-400">throttled</dt>
-              <dd className={stats?.monitor?.throttled ? 'text-suspicious' : 'text-benign'}>{stats?.monitor?.throttled ? 'yes' : 'no'}</dd>
+              <dd className={stats?.monitor?.throttled ? 'text-suspicious' : 'text-ink-300'}>
+                {stats?.monitor ? (stats.monitor.throttled ? 'yes' : 'no') : '—'}
+              </dd>
             </div>
             <div className="col-span-2">
               <dt className="text-ink-400">gaps</dt>

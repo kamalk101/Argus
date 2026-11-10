@@ -1,30 +1,45 @@
 namespace Argus.Desktop;
 
+using Microsoft.Win32;
+
 /// <summary>
-/// Why the WebView2 runtime matters here, and what to say when it cannot be used.
+/// Where the WebView2 runtime is, and what to say when it is not.
 ///
-/// Measured on Windows 10 21H2 with Edge 92: <c>msedgewebview2.exe</c> exists, so a check for the
-/// executable says "installed", but the WebView2 SDK refuses to create an environment and reports only
-/// <c>E_NOTIMPL</c> (0x80070032) — the Windows installation has never received the WebView2 runtime
-/// that ships separately from Edge. The runtime is therefore reported as absent unless it is the
-/// Evergreen installation, and the message says how to get it.
+/// The runtime can be installed **per machine** (HKLM, under Program Files) or **per user** (HKCU,
+/// under %LOCALAPPDATA%). Only the first was checked, which reported "not installed" on a machine that
+/// had 157.0.4341.42 sitting in the per-user location — measured. Both hives are read now, and the
+/// registration's own `location` value is used instead of guessing a path.
+///
+/// A second wrong check is not repeated: Edge ships <c>msedgewebview2.exe</c> too, so "the executable
+/// exists" says nothing. The Evergreen registration is the only reliable statement of "the runtime is
+/// installed and usable by the SDK".
 /// </summary>
 internal static class RuntimeLocator
 {
-    private const string ClientKey = @"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+    private const string ClientKey = @"SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
 
-    /// <summary>The Evergreen runtime's version, when it is registered. Null means it is not installed.</summary>
-    public static string? InstalledVersion()
+    /// <summary>The parts of the registration the shell needs, or null when it is absent.</summary>
+    internal sealed record Runtime(string Version, string? Location, bool PerUser);
+
+    public static Runtime? Find()
     {
-        foreach (var hive in new[] { Microsoft.Win32.Registry.LocalMachine, Microsoft.Win32.Registry.CurrentUser })
+        foreach (var (hive, perUser, path) in new[]
+        {
+            (Registry.LocalMachine, false, @"SOFTWARE\WOW6432Node\" + ClientKey),
+            (Registry.LocalMachine, false, ClientKey),
+            (Registry.CurrentUser, true, ClientKey),
+        })
         {
             try
             {
-                using var key = hive.OpenSubKey(ClientKey, writable: false);
-                if (key?.GetValue("pv") is string version && !string.IsNullOrWhiteSpace(version) && version != "0.0.0.0")
+                using var key = hive.OpenSubKey(path, writable: false);
+                if (key?.GetValue("pv") is not string version || string.IsNullOrWhiteSpace(version) || version == "0.0.0.0")
                 {
-                    return version;
+                    continue;
                 }
+
+                var location = key.GetValue("location") as string;
+                return new Runtime(version, string.IsNullOrWhiteSpace(location) ? null : location, perUser);
             }
             catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException)
             {

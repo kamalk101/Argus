@@ -92,6 +92,27 @@ test('the live screen opens the ticket-authenticated stream', async ({ page }) =
 });
 
 
+test('collection health reports the sensor counters, not blanks', async ({ page }) => {
+  // Regression: the periodic `stats` frame published the counters flat while the frame sent on connect
+  // nested them under `monitor`. After the first tick the screen showed "events seen 0 / forwarded 0"
+  // beside a running capture — a broken contract that looked like an idle sensor.
+  const headers = { Authorization: `Bearer ${token}` };
+  const listed = await (await page.request.get(`${baseUrl}/api/sessions`, { headers })).json().catch(() => null);
+  const running = (Array.isArray(listed) ? listed : []).find((session) => session.status === 'running');
+  test.skip(!running, 'no running session: the launch test did not produce one');
+
+  await page.goto(url('/live'));
+  const health = page.getByText('events seen').locator('..');
+  await expect(health).toBeVisible({ timeout: 15_000 });
+
+  // Wait for at least one stats frame, then require a real number.
+  await expect(async () => {
+    const seen = await health.locator('dd').innerText();
+    expect(seen).toMatch(/^[\d,]+$/);
+    expect(Number(seen.replace(/,/g, ''))).toBeGreaterThan(0);
+  }).toPass({ timeout: 20_000 });
+});
+
 test('a path that does not exist is refused before anything launches', async ({ page }) => {
   await page.goto(url('/'));
   await page.getByRole('button', { name: 'Monitor an application' }).first().click();

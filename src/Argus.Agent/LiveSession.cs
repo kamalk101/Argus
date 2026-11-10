@@ -439,7 +439,11 @@ public sealed class LiveSession : IAsyncDisposable
             band = risk.Band.ToString(),
             explanation = risk.Explanation,
         });
-        _hub.Publish("stats", MonitorStatsDto());
+        // Same envelope as the frame sent when a stream opens (`session.Health()`, which carries a
+        // nested `monitor`). Publishing the counters flat made `stats.monitor` undefined after the
+        // first tick, so the dashboard showed "events seen 0" while the sensor had counted hundreds of
+        // thousands — measured in the desktop window.
+        _hub.Publish("stats", new { monitor = MonitorStatsDto() });
     }
 
     private MonitorCountersDto MonitorStatsDto()

@@ -57,7 +57,8 @@ internal sealed class MainForm : Form
             // Before any WebView2 object exists: is the runtime actually installed (not merely present
             // as an Edge binary)? Measured: Edge 92's msedgewebview2.exe exists but the SDK cannot use
             // it, so checking for the ever-green registration is the check that matches reality.
-            if (RuntimeLocator.InstalledVersion() is null)
+            var runtime = RuntimeLocator.Find();
+            if (runtime is null)
             {
                 ShowFailure(
                     RuntimeLocator.ExplainMissing(new Uri(_agent.Dashboard, $"?token={_agent.Token}").ToString()),
@@ -65,7 +66,19 @@ internal sealed class MainForm : Form
                 return;
             }
 
-            await _web.EnsureCoreWebView2Async().ConfigureAwait(true);
+            AgentProcess.TryLog("WebView2 runtime " + runtime.Version + " (" + (runtime.PerUser ? "per user" : "per machine") + ")");
+
+            // The default user-data folder sits beside the executable, which is wrong for a run out of
+            // bin/ (a rebuild replaces files under the browser's profile). %LOCALAPPDATA% is also where a
+            // per-user runtime keeps its own state.
+            var profile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Argus",
+                "webview");
+            Directory.CreateDirectory(profile);
+
+            var environment = await CoreWebView2Environment.CreateAsync(null, profile).ConfigureAwait(true);
+            await _web.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
 
             // The token is handed to the page the same way a browser would get it from a URL, then the
             // page stores it and the address bar is not part of this app.
