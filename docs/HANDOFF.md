@@ -1225,13 +1225,16 @@ Four defects were found by running it, and three of them were invisible from the
 3. **The `WebView2Loader.dll` native file was not in the build output**, so environment creation failed
    with a bare `E_NOTIMPL (0x80070032)` that names neither the file nor the architecture. Copied
    explicitly by the project.
-4. **The WebView2 runtime genuinely is not installed on this VM.** Edge 92 ships
-   `msedgewebview2.exe`, so an executable check says "installed", but the Evergreen registration
-   (`EdgeUpdate\Clients\{F3017226-…}`) is absent and the SDK cannot use it. The shell now checks the
-   registration, and says exactly that — including the still-working dashboard URL — instead of a stack
-   trace. **Stated plainly: WebView2 rendering is not verified on this machine**, because the runtime is
-   not installable without changing the machine; everything the shell does *around* the browser is
-   verified (agent start, token, URL, live suite below).
+4. **The WebView2 check originally looked in one place only.** It read the machine-wide Evergreen
+   registration and reported "not installed" on this VM. The runtime *was* installed — per user, under
+   `HKCU\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, version
+   157.0.4341.42 — so the locator, not the runtime, was the failure. `RuntimeLocator` now reads HKLM
+   (native and WOW6432Node) and HKCU and uses the registration's own `location`, and the log line says
+   which one it used (*measured:* `WebView2 runtime 157.0.4341.42 (per user)`, 6 `webview` processes,
+   the eight-screen dashboard rendered in the window). Rendering is **verified** by driving the real
+   window through UI Automation: Monitor an application → path → Check this file (signature VALID,
+   sha-256 shown) → Start monitoring → Live screen with counters and a flat risk chart. Checking for
+   `msedgewebview2.exe` is still not a valid test, because Edge ships it.
 
 **A machine-wide failure the launch flow exposed.** Repeatedly killing agents left six
 `Argus-*` kernel ETW sessions registered, and the next launch failed with `0x800705AA` "Insufficient

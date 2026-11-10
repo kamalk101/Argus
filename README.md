@@ -83,9 +83,12 @@ running the identical command line from an already-elevated shell), but the UAC 
 cannot be approved on the unattended VM, so the parent-side ready-file handshake has not been
 observed succeeding there.
 
-**What is not verified:** registry capture under real activity (writes were not exercised),
-event loss and the volume fuse under load on a busy machine, any non-trivial target such as
-`7z.exe`, and the dashboard. Treat those as unverified until they have run on the target VM.
+**What is not verified:** registry capture under heavy real activity (single writes are exercised and
+verified — `reg add …\CurrentVersion\Run` reaches the pipeline at its full hive path), event loss and the
+volume fuse under load on a busy machine, and any non-trivial target such as `7z.exe`. The dashboard is
+no longer on this list: the eight screens are checked against payloads captured from real sessions, and
+the launch → live → drill-down → export path was driven both through Playwright against a running agent
+and through the `Argus.Desktop` window by UI Automation.
 
 ## Layout
 
