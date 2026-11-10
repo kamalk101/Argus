@@ -206,7 +206,8 @@ public sealed class LiveSession : IAsyncDisposable
             process.CommandLine,
             process.StartedUtc,
             process.Scope.ToString(),
-            process.ScopeReason))];
+            process.ScopeReason,
+            process.Signature?.ToString().ToLowerInvariant()))];
 
     public IReadOnlyList<BehaviorEvent> EventsPage(EventFilter filter) => _events.Page(Id, filter);
 

@@ -161,3 +161,35 @@ export interface EvidenceResponse {
   evidenceSeq: number[];
   events: MonitorEvent[];
 }
+
+/** What the agent is actually running with: `GET /api/settings`. Read-only, because the agent's
+ *  options are fixed at launch — a toggle the running agent could not apply would be a lie. */
+export interface ObservabilityRow {
+  observation: string;
+  level: string;
+  note: string;
+}
+
+export interface RuleThresholds {
+  [key: string]: number;
+}
+
+export interface AgentSettings {
+  agent: string;
+  agentPid: number;
+  elevated: boolean;
+  os: string;
+  osBuild: number;
+  runtime: string;
+  port: number;
+  requestedPort: number;
+  dataRoot: string;
+  rulesPath: string;
+  rules: RuleThresholds;
+  configHash: string;
+  webRoot: string;
+  sessionName: string;
+  durationSeconds: number | null;
+  observability: ObservabilityRow[];
+  features: Record<string, boolean>;
+}

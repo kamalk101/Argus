@@ -109,6 +109,15 @@ Save "/api/sessions/$id/events?limit=500" 'events.json'
 Save "/api/sessions/$id/timeline?limit=500" 'timeline.json'
 Save "/api/sessions/$id/scores"        'scores.json'
 
+# Settings and the exported report. Settings answers what the agent is actually running with; the
+# report is a whole HTML document, so it is saved verbatim (pretty-printing it would corrupt the
+# embedded JSON bundle the report carries).
+Save '/api/settings'                  'settings.json'
+$reportPath = Join-Path $OutDir 'report.html'
+$report = Invoke-WebRequest -Uri "$base/api/sessions/$id/report.html" -Headers $headers -UseBasicParsing
+Set-Content -Path $reportPath -Value $report.Content -Encoding utf8
+Write-Host ("   {0,-40} {1,8} bytes" -f 'report.html', $report.Content.Length)
+
 # The evidence chain for the most severe detection: the Threats screen expands a card into exactly
 # the events the agent says the detection rests on, and that is a different payload from the list.
 $detections = Get-Content (Join-Path $OutDir 'detections.json') -Raw | ConvertFrom-Json

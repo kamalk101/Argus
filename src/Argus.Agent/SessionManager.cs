@@ -209,6 +209,9 @@ public sealed class SessionManager : IAsyncDisposable
         }
     }
 
+    /// <summary>The thresholds in force for this agent process, as loaded at startup.</summary>
+    public RuleSettings RuleSettings => _ruleSettings;
+
     public LiveSession? Get(Guid id) => _sessions.GetValueOrDefault(id);
 
     public async Task<bool> StopAsync(Guid id, bool terminate)

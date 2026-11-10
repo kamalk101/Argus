@@ -1284,3 +1284,71 @@ hazards — not a retry. The honest statement in `docs/RULES.md` stands.
 
 Tests: 237 (96 core, 130 analysis, 11 storage); 47/47 fixtures. Tree unchanged by this experiment beyond
 this note.
+
+### 12.19 Report export, and a Settings screen that reports rather than pretends
+
+PLAN §8.8's last two items, both of which had a version of the feature already in the tree and neither of
+which was usable from the dashboard.
+
+**The report was thin and partly hardcoded.** `GET /api/sessions/{id}/report.html` existed, but its
+limitations list was five fixed sentences and the JSON bundle carried raw events and gaps without saying
+what produced them. Two builders — one for JSON, one for HTML — had already started to diverge in what
+they included. Both are now rendered from one `SessionReport.Snapshot` (`src/Argus.Agent/SessionReport.cs`):
+a section can no longer exist in one format and not the other. Each format gained, from data:
+
+- per-category counts taken from the sensor counters (process starts, file events, registry, DNS, forwarded,
+  outside scope, sampled reads, throttled) rather than from a count of the exported page — the page is capped
+  at 5000 events, so counting rows would have understated a busy session;
+- each detection with its **reason, counterfactual, categories, timestamps and its own evidence events**
+  with their observability level — the report now says why it fired, not only that it did;
+- collection health from the session's real gap list, and a limitation sentence derived from it: gaps present
+  reads "anything inside them may be missing", gaps absent reads "the sensor believes it delivered every
+  event". A report that prints the same five caveats every time trains the reader to skip them;
+- a warning when the volume fuse throttled the session (the counts are then a sample under pressure) and a
+  separate warning when the counters were unreadable, so "0" and "not reported" cannot look alike;
+- the configuration digest (`configHash`, SHA-256 over the rule thresholds + agent version, first 16 hex),
+  agent version and Windows build, printed in the header and repeated in the limitations;
+- the observability table and the raw JSON bundle embedded in the document. The HTML references no script,
+  image or stylesheet, and a live test asserts that — a report that needs the agent or the network to render
+  is not an export.
+
+**Two things the report got wrong, found by reading it.** A screenshot review of the first real report
+noticed that an F-002 detection's row said `PID 792` while its own reason said `reg.exe (PID 6912)`. Both
+are true: several rules group a finding under the process that *initiated* it (`AutostartKeyRule` sets
+`GroupPid = current.ParentPid` for the command-line channel), so `DetectionState.ScopePid` is the parent
+while the evidence event belongs to the child. Printing the group pid as "the process" contradicts the reason
+on the same page, so the row now prints `grouped under PID 792 · evidence from PID 6912` whenever the
+evidence comes from other processes, and stays `PID N` when it does not. The second: the evidence table
+showed `—` for a `processStart` row because it only looked at `target`/`pathKey`/`remoteIp`; it now falls
+back through `imagePath` and `commandLine`.
+
+**Export from the dashboard had to be a fetch, not a link.** `/api` rejects an unauthenticated request and
+`?token=` in a URL is the pattern the stream tickets exist to avoid (§12.16), so `<a href="/report.html">`
+cannot work. `ExportButton` (`web/src/components/ExportButton.tsx`) fetches with the bearer header, turns the
+response into a blob and saves it with a timestamped name; the token never reaches the URL bar, history or a
+proxy log. It sits in the shell header rather than on a screen because the report describes the whole
+session. Live test: the download arrives, its filename matches, and the saved file contains no `<script>`,
+`<img>`, `<link>` or external URL.
+
+**Settings reports facts, because the agent has no settings to change.** PLAN §8.8 sketches a settings page
+of toggles (collection profile, sampling, registry/DNS switches, retention, ML mode). None of that exists in
+the agent: options are parsed at launch, `SessionManager` loads `RuleSettings` once at startup, and nothing
+reloads. A toggle screen would therefore describe a program other than the one running — a claim about the
+machine that is not true. `GET /api/settings` (read-only) answers what *is* in force: version, pid, elevation,
+OS build, runtime, the **bound** port (measured: `--port 0` reported `port: 0` until this was fixed — the
+endpoint now takes the port Kestrel actually reported and keeps the requested one beside it), data root,
+dashboard root, ETW session name, duration limit, every rule threshold with its human label *and* its raw key,
+the config digest, and the observability table. The screen prints them and states the restart instruction
+beside them. It carries no checkbox or slider, and a test asserts that.
+
+`AgentSettings` therefore has no writable field, and the fixture set gained `settings.json` and
+`report.html` (captured from real sessions by `scripts/dashboard-fixtures.ps1`, which now saves both).
+
+`ProcessDto` gained `signature` (three-way, `null` when the check never ran) so the report's process table
+states what was verified instead of leaving the column to inference.
+
+Verification, all on this machine: **254 .NET tests**, **54/54 scenarios**, `scripts/verify.sh` all checks
+passed, **20/20 fixture Playwright** (8 live skipped) and **8/8 live Playwright** against an agent the script
+started and served `web/dist` from. Probe scripts lived in `C:\Users\kamal\argus-report-probe` and cleaned up
+their registry value and temp copy; the exported report was also rendered from `file://` and read back
+(that is how the PID contradiction was found).

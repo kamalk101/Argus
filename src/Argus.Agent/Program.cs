@@ -453,7 +453,9 @@ public static class Program
             var session = manager.Get(id);
             return session is null
                 ? Results.NotFound(new { error = "session not found" })
-                : Results.Json(BuildReport(session), AgentJson.Options);
+                : Results.Json(
+                    SessionReport.ToJson(SessionReport.Build(session, manager.RuleSettings, options.RulesPath)),
+                    AgentJson.Options);
         });
 
         app.MapGet("/api/sessions/{id:guid}/report.html", (Guid id) =>
@@ -461,8 +463,17 @@ public static class Program
             var session = manager.Get(id);
             return session is null
                 ? Results.NotFound(new { error = "session not found" })
-                : Results.Content(BuildHtmlReport(session), "text/html; charset=utf-8");
+                : Results.Content(
+                    SessionReport.ToHtml(SessionReport.Build(session, manager.RuleSettings, options.RulesPath)),
+                    "text/html; charset=utf-8");
         });
+
+        // Read-only, because the agent's options are fixed at launch: a Settings screen that offered
+        // toggles it could not apply would describe a different program than the one running.
+        app.MapGet("/api/settings", () =>
+            Results.Json(
+                EffectiveConfig.Describe(options, manager.RuleSettings, options.RulesPath, webRoot, manager.DataRoot, actualPort),
+                AgentJson.Options));
 
         if (webRoot is not null)
         {
@@ -637,115 +648,6 @@ public static class Program
             ? Math.Clamp(limit, 1, 5000)
             : 200;
 
-    private static object BuildReport(LiveSession session)
-    {
-        var record = session.Record();
-        var detections = session.DetectionList();
-        var events = session.EventsPage(new EventFilter { Limit = 5000, InScopeOnly = true })
-            .Select(session.ToDto)
-            .ToArray();
-
-        return new
-        {
-            generatedUtc = DateTimeOffset.UtcNow,
-            agent = AgentInfo.Version,
-            session = record,
-            state = session.State(),
-            processes = session.ProcessDtos(),
-            detections,
-            scores = session.ScoreHistory(),
-            gaps = session.Gaps().Select(gap => new
-            {
-                timestamp = gap.TimestampUtc,
-                source = gap.Source,
-                reason = gap.Reason,
-                lost = gap.LostCount,
-                detail = gap.Detail,
-            }).ToArray(),
-            events,
-            limitations = new[]
-            {
-                "Near-real-time, not hard real-time: ETW buffering and batching add roughly 1-3 seconds.",
-                "Absence of detections means no significant observed indicators, not proof of safety.",
-                "Payload content, URLs and encrypted traffic are not visible; only endpoints, timing and volume are recorded.",
-                "Injection indicators are inferred unless Sysmon is installed.",
-                "Read events may be sampled under volume pressure; gaps are reported in this session.",
-            },
-        };
-    }
-
-    private static string BuildHtmlReport(LiveSession session)
-    {
-        var state = session.State();
-        var detections = session.DetectionList();
-        var processes = session.ProcessDtos();
-        var score = session.ScoreHistory();
-        var builder = new StringBuilder(16_384);
-
-        builder.Append("<!doctype html><html><head><meta charset=\"utf-8\"><title>Argus report</title>");
-        builder.Append("<style>body{font-family:Segoe UI,Arial,sans-serif;background:#0d1117;color:#e6edf3;margin:32px;line-height:1.45}")
-            .Append("table{border-collapse:collapse;width:100%;margin:12px 0 24px}th,td{border:1px solid #30363d;padding:7px 9px;text-align:left;font-size:13px}")
-            .Append("th{background:#161b22}.bad{color:#ff7b72}.warn{color:#d29922}.muted{color:#8b949e}</style></head><body>");
-
-        builder.Append("<h1>Argus behaviour report</h1>");
-        builder.Append("<p class=\"muted\">Generated ").Append(WebUtility.HtmlEncode(DateTimeOffset.UtcNow.ToString("u", CultureInfo.InvariantCulture))).Append("</p>");
-        builder.Append("<p><strong>Target:</strong> ").Append(WebUtility.HtmlEncode(state.TargetPath)).Append("<br>")
-            .Append("<strong>Verdict:</strong> ").Append(WebUtility.HtmlEncode(state.Verdict ?? "Benign"))
-            .Append(" &nbsp; <strong>Score:</strong> ").Append(state.Score.ToString("0.0", CultureInfo.InvariantCulture))
-            .Append(" &nbsp; <strong>Peak:</strong> ").Append(state.PeakScore.ToString("0.0", CultureInfo.InvariantCulture))
-            .Append("<br><strong>Started:</strong> ").Append(WebUtility.HtmlEncode(state.StartedUtc.ToString("u", CultureInfo.InvariantCulture)))
-            .Append(" &nbsp; <strong>Ended:</strong> ").Append(WebUtility.HtmlEncode(state.EndedUtc?.ToString("u", CultureInfo.InvariantCulture) ?? "running"))
-            .Append("</p>");
-
-        builder.Append("<h2>Detections</h2>");
-        if (detections.Count == 0)
-        {
-            builder.Append("<p>No significant indicators were observed. That is not proof that the application is safe.</p>");
-        }
-        else
-        {
-            builder.Append("<table><tr><th>Rule</th><th>Title</th><th>Severity</th><th>Confidence</th><th>Reason</th><th>Counterfactual</th></tr>");
-            foreach (var detection in detections)
-            {
-                builder.Append("<tr><td>").Append(WebUtility.HtmlEncode(detection.RuleId)).Append("</td><td>")
-                    .Append(WebUtility.HtmlEncode(detection.Title)).Append("</td><td>")
-                    .Append(detection.Severity.ToString(CultureInfo.InvariantCulture)).Append("</td><td>")
-                    .Append(detection.Confidence.ToString("0.00", CultureInfo.InvariantCulture)).Append("</td><td>")
-                    .Append(WebUtility.HtmlEncode(detection.Reason)).Append("</td><td>")
-                    .Append(WebUtility.HtmlEncode(detection.Counterfactual)).Append("</td></tr>");
-            }
-
-            builder.Append("</table>");
-        }
-
-        builder.Append("<h2>Processes</h2><table><tr><th>PID</th><th>Parent</th><th>Image</th><th>Scope</th><th>Command line</th></tr>");
-        foreach (var process in processes)
-        {
-            builder.Append("<tr><td>").Append(process.Pid.ToString(CultureInfo.InvariantCulture)).Append("</td><td>")
-                .Append(process.ParentPid?.ToString(CultureInfo.InvariantCulture) ?? "-").Append("</td><td>")
-                .Append(WebUtility.HtmlEncode(process.ImageName ?? process.ImagePath ?? "-")).Append("</td><td>")
-                .Append(WebUtility.HtmlEncode(process.Scope)).Append("</td><td>")
-                .Append(WebUtility.HtmlEncode(process.CommandLine ?? "-")).Append("</td></tr>");
-        }
-
-        builder.Append("</table><h2>Score history</h2><table><tr><th>Time</th><th>Score</th><th>Peak</th><th>Band</th></tr>");
-        foreach (var sample in score)
-        {
-            builder.Append("<tr><td>").Append(WebUtility.HtmlEncode(sample.Ts.ToString("u", CultureInfo.InvariantCulture))).Append("</td><td>")
-                .Append(sample.Score.ToString("0.0", CultureInfo.InvariantCulture)).Append("</td><td>")
-                .Append(sample.Peak.ToString("0.0", CultureInfo.InvariantCulture)).Append("</td><td>")
-                .Append(WebUtility.HtmlEncode(sample.Band)).Append("</td></tr>");
-        }
-
-        builder.Append("</table><h2>Limitations</h2><ul>")
-            .Append("<li>Near-real-time, not hard real-time; ETW buffering adds roughly 1-3 seconds.</li>")
-            .Append("<li>No detections means no significant observed indicators, not proof of safety.</li>")
-            .Append("<li>Payload content is not visible; endpoints, timing and volume only.</li>")
-            .Append("<li>Read events may be sampled under volume pressure; gaps are recorded.</li>")
-            .Append("</ul></body></html>");
-
-        return builder.ToString();
-    }
 
     private static void WriteReadyFile(string path, object ready)
     {

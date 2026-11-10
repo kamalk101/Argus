@@ -10,7 +10,9 @@ import { NetworkScreen } from './screens/NetworkScreen';
 import { ThreatsScreen } from './screens/ThreatsScreen';
 import { TimelineScreen } from './screens/TimelineScreen';
 import { SearchScreen } from './screens/SearchScreen';
+import { SettingsScreen } from './screens/SettingsScreen';
 import { CoverageBanner, VerdictPill } from './components/ui';
+import { ExportButton } from './components/ExportButton';
 
 const NAV = [
   { to: '/', label: 'Sessions' },
@@ -21,6 +23,7 @@ const NAV = [
   { to: '/threats', label: 'Detections' },
   { to: '/timeline', label: 'Timeline' },
   { to: '/search', label: 'Search' },
+  { to: '/settings', label: 'Settings' },
 ];
 
 export default function App() {
@@ -108,6 +111,7 @@ function Shell() {
             )}
           </div>
           <div className="flex items-center gap-3 text-[10px] text-ink-400">
+            <ExportButton sessionId={session?.id ?? null} />
             <span title="Absence of detection is weaker evidence when the sensor lost events">
               coverage: {session ? (session.coverage.complete ? 'complete' : `${session.coverage.gaps} gaps`) : '—'}
             </span>
@@ -126,6 +130,7 @@ function Shell() {
           <Route path="/threats" element={<ThreatsScreen />} />
           <Route path="/timeline" element={<TimelineScreen />} />
           <Route path="/search" element={<SearchScreen />} />
+          <Route path="/settings" element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

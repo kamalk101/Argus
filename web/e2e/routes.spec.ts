@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Eight routes, each asserted on the things the phase's definition of done names: the route renders
+ * Nine routes, each asserted on the things the phase's definition of done names: the route renders
  * its own content (not the previous screen's), and an event row carries its observability badge.
  *
  * Two fixture sets are used: `flagged` (cmd → powershell -enc, a Run-key write, a dropped copy of
@@ -16,6 +16,7 @@ const ROUTES = [
   { path: '/threats', heading: 'Detections' },
   { path: '/timeline', heading: 'Timeline' },
   { path: '/search', heading: 'Search' },
+  { path: '/settings', heading: 'This agent' },
 ] as const;
 
 /** `/threats?fixtures=flagged` — the query carries the fixture set, the path stays a real route. */
@@ -185,4 +186,36 @@ test('the launch dialog says it cannot launch when there is no agent', async ({ 
 
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toBeHidden();
+});
+
+test('settings reports the configuration in force, not a set of toggles', async ({ page }) => {
+  await page.goto(url('/settings'));
+
+  // The three sections that make the screen honest: the process, the thresholds it loaded, and the
+  // observability table every report also prints.
+  await expect(page.getByRole('heading', { name: 'This agent' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Rule thresholds in force' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'What this tool can and cannot see' })).toBeVisible();
+
+  // A threshold is shown by its human label *and* its key, so a new threshold cannot hide.
+  await expect(page.getByText('Files created before F-004 reports a rate')).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'massFileCreationCount' })).toBeVisible();
+
+  await expect(page.getByText('Not observable', { exact: false }).first()).toBeVisible();
+
+  // Nothing on this screen may offer to change the running agent: its options are fixed at launch.
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await expect(page.locator('input[type=range]')).toHaveCount(0);
+});
+
+test('the export control downloads the captured report and never puts the token in a URL', async ({ page }) => {
+  await page.goto(url('/threats'));
+
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'HTML' }).click();
+  const saved = await download;
+
+  expect(saved.suggestedFilename()).toMatch(/report.*\.html$/);
+  // The bearer token must not appear in the page's own URL: the fetch carries it in a header.
+  expect(page.url()).not.toContain('token=');
 });

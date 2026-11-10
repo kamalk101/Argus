@@ -17,7 +17,7 @@ malicious. It does not scan a file and print a verdict.
 | 1 | Core model, scope tracking, scoring, SQLite, replay harness, fixtures | **done** (Linux-verified) |
 | 2 | ETW collectors + elevated agent host | **done on Windows** for process, file, network+DNS capture and the API guards; `--elevate` UAC consent click unverified (unattended VM), registry volume and loss under load unverified |
 | 3 | Full catalogue + correlation | **complete**; all 23 catalogued rules shipped, with tunable thresholds and the catalogue table gated by a test (persistence incl. registry writes, system write, payload drop, mass file creation, ransomware-shaped rename burst, credential-store access, unexpected shell, unattributed interpreter, encoded interpreter, user-writable launch, unsigned image, switch cycling, recovery tampering, cross-process launch, risky port, beacon-shaped callbacks, large outbound transfers, bare-address connections, lookup storms, persistence-then-network, startup-write-then-execution) |
-| 4 | Dashboard (8 screens) | not started |
+| 4 | Dashboard (8 screens + Settings) | **complete** — screens, launch flow, desktop shell, report export and a read-only Settings screen; Playwright gate plus a live suite against a real agent |
 | 5 | Windows end-to-end, reports, tuning | not started |
 | 6 | ML advisory layer | not started |
 | 7 | Hardening, packaging | not started |
@@ -30,13 +30,18 @@ pipeline with asserted verdicts, each rule carrying at least one firing and one 
 benign corpus of six applications ([`docs/BENIGN-CORPUS.md`](docs/BENIGN-CORPUS.md)) sits at
 **Benign 0.0 with zero detections and zero gaps**. SQLite persistence and FTS search round-trip.
 
-**Dashboard (Phase 4, in progress):** `web/` renders the agent's own JSON in eight screens — Sessions,
-Live, Processes, Files, Network, Detections, Timeline, Search — with a virtualised event list (100k
-rows asserted), a risk chart with detection markers, an evidence chain per detection, an
-observability badge on every row and a persistent coverage banner. **Playwright tests** run against payloads
-captured from real sessions by `scripts/dashboard-fixtures.ps1`, so the tests cannot pass while a DTO
-breaks the UI, plus a live mode checked against a running agent. Live checks: `scripts/check-stream-ticket.sh` (single-use SSE tickets,
-8/8) and `scripts/check-sse-reconnect.sh` (reconnect recovers the snapshot, 4/4).
+**Dashboard (Phase 4, complete):** `web/` renders the agent's own JSON in eight data screens — Sessions,
+Live, Processes, Files, Network, Detections, Timeline, Search — plus **Settings**, which reports what the
+running agent is configured with (bound port, rule thresholds and their keys, config digest, and the
+observability table) and offers no toggles, because the agent reads its options at launch and a switch it
+could not apply would be a lie. Virtualised event list (100k rows asserted), risk chart with detection
+markers, an evidence chain per detection, an observability badge on every row, a persistent coverage banner,
+and **report export** (self-contained HTML carrying its own JSON bundle, or the raw JSON) fetched with the
+bearer token so the token never enters a URL. **Playwright tests** run against payloads captured from real
+sessions by `scripts/dashboard-fixtures.ps1`, so the tests cannot pass while a DTO breaks the UI, plus a live
+mode checked against a running agent. Live checks: `scripts/check-stream-ticket.sh` (single-use SSE tickets,
+8/8), `scripts/check-sse-reconnect.sh` (reconnect recovers the snapshot, 4/4) and `web/e2e/live.spec.ts`
+(8/8 against an agent that serves `web/dist`).
 
 The agent serves the built dashboard itself (`--web-root`, auto-detected as `web/dist`), so the UI and
 the API share one origin and the bearer token never leaves loopback. "Monitor an application" opens a

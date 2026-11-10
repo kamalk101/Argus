@@ -12,6 +12,7 @@
 // the absence of a token (nothing else can work without one).
 
 import type {
+  AgentSettings,
   EvidenceResponse,
   Health,
   MonitorEvent,
@@ -162,6 +163,65 @@ export async function getEvidence(id: string, key: string): Promise<EvidenceResp
     }
   }
   return live<EvidenceResponse>(`/api/sessions/${id}/detections/${encodeURIComponent(key)}`);
+}
+
+/** What the running agent is configured with. Read-only: the agent's options are fixed at launch. */
+export async function getSettings(): Promise<AgentSettings> {
+  if (mode === 'fixture') {
+    return fixture<AgentSettings>('settings.json');
+  }
+  return live<AgentSettings>('/api/settings');
+}
+
+/**
+ * Download a session report.
+ *
+ * The bearer token cannot travel in a link — `GET /api/...` rejects an unauthenticated request, and
+ * `?token=` in a URL is the pattern the stream tickets exist to avoid. So the document is fetched
+ * with the header, turned into a blob, and saved by the browser. Nothing about the token reaches the
+ * URL bar, the history, or a proxy log.
+ */
+export async function exportReport(id: string, format: 'html' | 'json'): Promise<void> {
+  if (mode === 'fixture') {
+    // The fixture set carries a report captured from a real session, so the download path is still
+    // exercised — but it is that session's report, not one this browser could ask an agent for.
+    const response = await fetch(`/fixtures/${fixtureSet}/report.${format}`);
+    if (!response.ok) {
+      throw new Error(`fixture ${fixtureSet}/report.${format} is missing (${response.status})`);
+    }
+    saveBlob(await response.blob(), `argus-fixture-report.${format}`);
+    return;
+  }
+
+  const bearer = token();
+  const response = await fetch(base + `/api/sessions/${id}/report.${format}`, {
+    headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
+  });
+  if (response.status === 401) {
+    throw new Error('The agent rejected this session: no valid bearer token.');
+  }
+  if (!response.ok) {
+    throw new Error(`report.${format} answered ${response.status} ${response.statusText}`);
+  }
+  saveBlob(await response.blob(), `argus-report-${format === 'json' ? 'session' : 'report'}-${stamp()}.${format}`);
+}
+
+function stamp(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Freed on the next tick: revoking synchronously can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** What a launch would run: the preview the operator sees before anything starts. */

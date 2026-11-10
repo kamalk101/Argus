@@ -122,3 +122,42 @@ test('a path that does not exist is refused before anything launches', async ({ 
   await expect(page.getByText(/no such file on the agent's machine/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start monitoring' })).toBeDisabled();
 });
+
+test('the exported report is fetched with the bearer token and is self-contained', async ({ page }) => {
+  // The download path cannot be a link: `/api/...` rejects an unauthenticated request, and a token in
+  // a URL is exactly what the stream tickets exist to avoid. So assert both halves — the browser gets
+  // a file, and the report itself carries no external asset that would 404 once the file is moved.
+  const headers = { Authorization: `Bearer ${token}` };
+  const listed = await (await page.request.get(`${baseUrl}/api/sessions`, { headers })).json().catch(() => null);
+  const session = (Array.isArray(listed) ? listed : [])[0];
+  test.skip(!session, 'no session on this agent to export');
+
+  await page.goto(url('/threats'));
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'HTML' }).click();
+  const saved = await download;
+  expect(saved.suggestedFilename()).toMatch(/^argus-report-.*\.html$/);
+
+  const file = await saved.path();
+  const html = await (await import('node:fs/promises')).readFile(file!, 'utf8');
+  expect(html).toContain('Argus behaviour report');
+  expect(html).toContain('What this tool can and cannot see');
+  expect(html).toContain('config');
+  // No external asset may be referenced: a report that needs the agent or the internet to render is
+  // not an export.
+  expect(html).not.toMatch(/<(script|img|link)\b/i);
+  expect(html).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)/);
+});
+
+test('settings shows the port the agent actually bound and its configuration digest', async ({ page }) => {
+  await page.goto(url('/settings'));
+  await expect(page.getByRole('heading', { name: 'This agent' })).toBeVisible();
+
+  // Read from the agent, not invented: the same values `/api/settings` answers.
+  const settings = await (await page.request.get(`${baseUrl}/api/settings`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })).json();
+  await expect(page.getByText(`127.0.0.1:${settings.port}`)).toBeVisible();
+  await expect(page.getByText(settings.configHash)).toBeVisible();
+  await expect(page.getByText(settings.agent, { exact: true }).first()).toBeVisible();
+});

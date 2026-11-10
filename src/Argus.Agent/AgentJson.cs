@@ -86,7 +86,10 @@ public sealed record ProcessDto(
     string? CommandLine,
     DateTimeOffset StartedUtc,
     string Scope,
-    string? ScopeReason);
+    string? ScopeReason,
+    // Three-way, and null when the check never ran: a report that printed "unsigned" for "unreadable"
+    // would be making a claim the sensor did not verify.
+    string? Signature);
 
 public sealed record HealthDto(
     string Status,

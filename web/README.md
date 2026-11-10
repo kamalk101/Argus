@@ -1,6 +1,7 @@
 # Argus dashboard
 
-Phase 4 of [`../PLAN.md`](../PLAN.md): eight screens over the agent's own API, dark-first, dense.
+Phase 4 of [`../PLAN.md`](../PLAN.md): eight data screens over the agent's own API plus a read-only
+Settings screen, dark-first, dense.
 React 19 + Vite + TypeScript + Tailwind v4, virtualised tables, no UI kit.
 
 ## Run it against a live agent
@@ -51,8 +52,9 @@ npm run dev -- --open "/?fixtures=flagged"
 
 ```bash
 npm run build    # tsc --noEmit + vite build
-npm test         # 22 Playwright tests: eight routes, observability badges, evidence chain,
-                 # keyboard, 100k-row scroll, launch dialog (5 live tests skip without a token)
+npm test         # 20 fixture Playwright tests: nine routes, observability badges, evidence chain,
+                 # keyboard, 100k-row scroll, launch dialog, settings, report export
+                 # (+ 8 live tests that skip without a token)
 npm run shots    # writes .shots/*.png for review (no assertions)
 ```
 
@@ -64,9 +66,11 @@ Live mode runs against the agent's own origin, so no proxy is needed — point i
 ARGUS_LIVE_URL=http://127.0.0.1:5180 ARGUS_LIVE_TOKEN=<token> npm test -- e2e/live.spec.ts
 ```
 
-The five live tests cover the shell, a client-side route surviving a reload, **launch → preview →
-session** (which stops any session left by a previous run first), the ticket-authenticated stream, and
-a non-existent path being refused before anything launches.
+The eight live tests cover the shell, a client-side route surviving a reload, **launch → preview →
+session** (which stops any session left by a previous run first), the ticket-authenticated stream, the
+sensor counters in the stats frame, a non-existent path being refused before anything launches, **report
+export** (the download arrives and the saved file references no external asset) and **settings** (the bound
+port and config digest match what `/api/settings` answers).
 
 ## Layout
 
@@ -74,9 +78,10 @@ a non-existent path being refused before anything launches.
 src/api/client.ts      the only data door: live bearer fetches or fixture reads, same types
 src/api/types.ts       the payload contract, copied from src/Argus.Agent/AgentJson.cs
 src/components/        EventTable (virtualised), RiskChart (SVG), badges, panels, state notes
-src/screens/           the eight routes
+src/screens/           the eight data routes + Settings
 src/session.tsx        one loaded session for the whole shell, so screens cannot disagree
 e2e/routes.spec.ts     the definition-of-done assertions
+e2e/live.spec.ts       the same claims against a real agent (ARGUS_LIVE_TOKEN)
 ```
 
 Every screen renders loading, empty and error separately, and the coverage banner is not dismissible:
